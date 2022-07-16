@@ -22,7 +22,7 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.1, batch_maxa
 end
 
 
-function mymap!(out, fn, arr; batch_avgtime=0.1, batch_maxadjust=2.0)
+function mymap!(out, fn, arr)
     ntasks = length(arr)
 
     ifirst = 1
@@ -38,7 +38,7 @@ function mymap!(out, fn, arr; batch_avgtime=0.1, batch_maxadjust=2.0)
         @spawn begin
             time = @elapsed out[idxs] .= fn(arr[idxs])
 
-            i_per_thread_new = calc_i_per_thread(time, length(iset); batch_avgtime, batch_maxadjust)
+            i_per_thread_new = calc_i_per_thread(time, length(iset))
             lock(lk) do
                 if last_ifirst[] < iset[1]
                     i_per_thread[] = i_per_thread_new

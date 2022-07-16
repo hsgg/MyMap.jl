@@ -6,7 +6,7 @@ module MyMap
 using Base.Threads
 
 
-function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=1.0, batch_maxadjust=100.0)
+function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.1, batch_maxadjust=2.0)
     adjust = batch_avgtime / time  # if we have accurate measurement of time
     adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
     adjust = max(1/batch_maxadjust, adjust)  # limit downward adjustment
@@ -18,24 +18,28 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=1.0, batch_maxa
 end
 
 
-function mymap!(out, fn, arr; batch_avgtime=1.0, batch_maxadjust=10.0)
-    nconcurrent_tasks = Threads.nthreads()
+function mymap!(out, fn, arr; batch_avgtime=0.1, batch_maxadjust=2.0)
     ntasks = length(arr)
-    #@show ntasks nconcurrent_tasks
 
     ifirst = 1
     i_per_thread = Atomic{Int}(1)
+    last_ifirst = Atomic{Int}(0)  # doesn't need to be atomic
+    lk = Threads.Condition()
 
     @sync while ifirst <= ntasks
         iset = ifirst:min(ntasks, ifirst + i_per_thread[] - 1)
-        #@show ifirst,i_per_thread_now
+        #@show ifirst,i_per_thread[]
 
         @spawn begin
-            time = @elapsed for i in iset
-                out[i] = fn(arr[i])
-            end
+            time = @elapsed @. out[iset] = fn(arr[iset])
 
-            i_per_thread[] = calc_i_per_thread(time[], length(iset); batch_avgtime, batch_maxadjust)
+            i_per_thread_new = calc_i_per_thread(time, length(iset); batch_avgtime, batch_maxadjust)
+            lock(lk) do
+                if last_ifirst[] < iset[1]
+                    i_per_thread[] = i_per_thread_new
+                    last_ifirst[] = iset[1]
+                end
+            end
         end
 
         ifirst = iset[end] + 1
@@ -66,23 +70,26 @@ end
 
 function test_work(i)
     s = 0.0
-    for j=1:i
-        s += log(j*i)
+    for j=1:i^2
+        s += log(j*float(i))
     end
     return s
 end
 
 
 function main()
-    A = 1:10000
-    logA0 = test_work.(1:100)
+    A = 1:2000
+    test_work.(1:100)
+    mymap(test_work, 1:100)
+    threadsloop(test_work, 1:100)
+    #ThreadsX.map(test_work, 1:100)
     #@time logA0 = test_work.(A)
-    logA1 = mymap(test_work, 1:100)
+    #@btime threadsloop($test_work, $A)
     @time logA1 = mymap(test_work, A)
-    logA2 = threadsloop(test_work, 1:100)
     @time logA2 = threadsloop(test_work, A)
     #@show A logA1
     @assert logA1 == logA2
+    #@assert logA1 == logA3
     #@assert logA2 == logA0
 end
 

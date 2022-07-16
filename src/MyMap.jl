@@ -32,11 +32,13 @@ function mymap!(out, fn, arr)
 
     @sync while ifirst <= ntasks
         iset = ifirst:min(ntasks, ifirst + i_per_thread[] - 1)
-        idxs = eachindex(arr)[iset]
         #@show ifirst,i_per_thread[]
 
         @spawn begin
-            time = @elapsed out[idxs] .= fn(arr[idxs])
+            time = @elapsed begin
+                idxs = eachindex(out, arr)[iset]
+                out[idxs] .= fn(arr[idxs])
+            end
 
             i_per_thread_new = calc_i_per_thread(time, length(iset))
             lock(lk) do
@@ -61,6 +63,104 @@ function mymap(fn, arr)
     return out
 end
 
+
+function calc_outsize(x, y)
+    outsize = fill(1, max(ndims(x), ndims(y)))
+    outsize[1:ndims(x)] .= size(x)
+    for d=1:ndims(y)
+        if outsize[d] == 1
+            outsize[d] = size(y, d)
+        elseif size(y, d) != 1 && outsize[d] != size(y, d)
+            error("size(x) = $(size(x)) and size(y) = $(size(y)) cannot be broadcast")
+        end
+    end
+    return (outsize...,)
+end
+
+
+function mymap2d!(out, fn, x, y)
+    ntasks = prod(calc_outsize(x, y))
+    @assert size(out) == calc_outsize(x, y)
+
+    ifirst = 1
+    i_per_thread = Atomic{Int}(1)
+    last_ifirst = Atomic{Int}(0)  # doesn't need to be atomic
+    lk = Threads.Condition()
+
+    @sync while ifirst <= ntasks
+        iset = ifirst:min(ntasks, ifirst + i_per_thread[] - 1)
+        #@show ifirst,i_per_thread[]
+
+        @spawn begin
+            time = @elapsed begin
+                idxs = eachindex(out, x, y)[iset]
+                out[idxs] .= fn(x[idxs], y[idxs])
+            end
+
+            i_per_thread_new = calc_i_per_thread(time, length(iset))
+            lock(lk) do
+                if last_ifirst[] < iset[1]
+                    i_per_thread[] = i_per_thread_new
+                    last_ifirst[] = iset[1]
+                end
+            end
+        end
+
+        ifirst = iset[end] + 1
+    end
+
+    return out
+end
+
+
+function mymap2d(fn, x, y)
+    Treturn = Base.return_types(fn, (eltype(x), eltype(y)))[1]
+    outsize = calc_outsize(x, y)
+    @show outsize
+    out = Array{Treturn}(undef, outsize...)
+    mymap2d!(out, fn, x, y)
+    return out
+end
+
+
+############### test 2d
+
+function test_work(i::Number, j::Number)
+    return log(j) + log(i)
+end
+
+function test_work(x, y)
+    return test_work.(x, y)
+end
+
+
+function main2d()
+    A = 1:10
+    B = 11:15
+    @assert calc_outsize(A, A) == (10,)
+    #@assert calc_outsize(A, B) == (10,)  # should throw error
+    @assert calc_outsize(A, B') == (10, 5)
+    @assert calc_outsize(A', B) == (5, 10)
+
+    r0 = test_work.(A, A)
+    r1 = mymap2d(test_work, A, A)
+    @show r0
+    @assert r0 == r1
+
+    r0 = test_work.(A .* ones(10)', ones(10).*A')
+    r1 = mymap2d(test_work, A .* ones(10)', ones(10).*A')
+    @show r0
+    @assert r0 == r1
+
+    r0 = test_work.(A, A')
+    r1 = mymap2d(test_work, A, A')
+    @show r0
+    @assert r0 == r1
+end
+
+
+
+############### test 1d
 
 function threadsloop(fn, arr)
     Treturn = Base.return_types(fn, (eltype(arr),))[1]
@@ -104,7 +204,8 @@ end
 
 end
 
-MyMap.main()
+#MyMap.main()
+MyMap.main2d()
 
 
 # vim: set sw=4 et sts=4 :

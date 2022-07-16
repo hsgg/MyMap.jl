@@ -36,7 +36,7 @@ function mymap!(out, fn, arr; batch_avgtime=0.1, batch_maxadjust=2.0)
         #@show ifirst,i_per_thread[]
 
         @spawn begin
-            time = @elapsed @. out[idxs] = fn(arr[idxs])
+            time = @elapsed out[idxs] .= fn(arr[idxs])
 
             i_per_thread_new = calc_i_per_thread(time, length(iset); batch_avgtime, batch_maxadjust)
             lock(lk) do
@@ -72,12 +72,17 @@ function threadsloop(fn, arr)
 end
 
 
-function test_work(i)
+function test_work(i::Number)
+    #return i + 1.1
     s = 0.0
     for j=1:i^2
         s += log(j*float(i))
     end
     return s
+end
+
+function test_work(arr)
+    return test_work.(arr)
 end
 
 

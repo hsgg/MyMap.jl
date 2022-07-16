@@ -11,7 +11,11 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.1, batch_maxa
     adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
     adjust = max(1/batch_maxadjust, adjust)  # limit downward adjustment
 
-    i_per_thread_new = floor(Int, adjust * i_per_thread_old)
+    if adjust < 1
+        i_per_thread_new = floor(Int, adjust * i_per_thread_old)
+    else
+        i_per_thread_new = ceil(Int, adjust * i_per_thread_old)
+    end
     i_per_thread_new = max(1, i_per_thread_new)  # must be at least 1
 
     return i_per_thread_new

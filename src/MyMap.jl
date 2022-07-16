@@ -28,10 +28,11 @@ function mymap!(out, fn, arr; batch_avgtime=0.1, batch_maxadjust=2.0)
 
     @sync while ifirst <= ntasks
         iset = ifirst:min(ntasks, ifirst + i_per_thread[] - 1)
+        idxs = eachindex(arr)[iset]
         #@show ifirst,i_per_thread[]
 
         @spawn begin
-            time = @elapsed @. out[iset] = fn(arr[iset])
+            time = @elapsed @. out[idxs] = fn(arr[idxs])
 
             i_per_thread_new = calc_i_per_thread(time, length(iset); batch_avgtime, batch_maxadjust)
             lock(lk) do
@@ -51,7 +52,6 @@ end
 
 function mymap(fn, arr)
     Treturn = Base.return_types(fn, (eltype(arr),))[1]
-    #@show Treturn
     out = similar(arr, Treturn)
     mymap!(out, fn, arr)
     return out
@@ -78,13 +78,12 @@ end
 
 
 function main()
-    A = 1:2000
+    A = 1:1000
     test_work.(1:100)
     mymap(test_work, 1:100)
     threadsloop(test_work, 1:100)
     #ThreadsX.map(test_work, 1:100)
     #@time logA0 = test_work.(A)
-    #@btime threadsloop($test_work, $A)
     @time logA1 = mymap(test_work, A)
     @time logA2 = threadsloop(test_work, A)
     #@show A logA1

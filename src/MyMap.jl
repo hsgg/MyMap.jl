@@ -6,6 +6,10 @@ module MyMap
 using Base.Threads
 
 
+include("MeshedArrays.jl")
+using .MeshedArrays
+
+
 function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.1, batch_maxadjust=2.0)
     adjust = batch_avgtime / time  # if we have accurate measurement of time
     adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
@@ -77,98 +81,7 @@ function calc_outsize(x, y)
     return (outsize...,)
 end
 
-
-struct MeshedArray{T,N,Tarr,Tsz} <: AbstractArray{T,N}
-    totsize::Tsz
-    x::Tarr
-end
-MeshedArray(sz, x) = begin
-    for n=1:ndims(x)
-        if size(x,n) != 1
-            if size(x,n) != sz[n]
-                error("dimension $n in 'x' $(size(x)) must match 'sz' $sz or be 1")
-            end
-        end
-    end
-    return MeshedArray{eltype(x), length(sz), typeof(x), typeof(sz)}(sz, x)
-end
-Base.ndims(a::MeshedArray{T,N}) where {T, N <: Integer} = N
-Base.size(a::MeshedArray) = a.totsize
-Base.length(a::MeshedArray) = prod(size(a))
-Base.getindex(a::MeshedArray, i::Int) = begin
-    iout = 0
-    szx = 1
-    for n=1:ndims(a.x)
-        d = ((i - 1) % size(a, n)) + 1
-        i = ((i - 1) ÷ size(a, n)) + 1
-        if size(a.x, n) != 1
-            iout += szx * (d - 1)
-        end
-        szx *= size(a.x, n)
-    end
-    return a.x[iout+1]
-end
-Base.getindex(a::MeshedArray{T,N}, I::Vararg{Int,N}) where {T,N} = begin
-    iout = 0
-    szx = 1
-    for n=1:ndims(a.x)
-        @assert I[n] <= size(a, n)
-        if size(a.x, n) != 1
-            d = I[n]
-            iout += szx * (d - 1)
-        end
-        szx *= size(a.x, n)
-    end
-    for n=ndims(a.x)+1:ndims(a)
-        @assert I[n] <= size(a, n)
-    end
-    return a.x[iout+1]
-end
-
 function test_meshedarray()
-    println("first index")
-    totsize = (5,3)
-    x = 1:5
-    mx = MeshedArray(totsize, x)
-    @assert length(mx) == prod(totsize)
-    for i=1:length(mx)
-        @show i,mx[i]
-        @assert mx[i] == (i - 1) % 5 + 1
-    end
-
-    println("second index")
-    totsize = (5,3)
-    x = 1:3
-    mx = MeshedArray(totsize, x')
-    @assert length(mx) == prod(totsize)
-    for i=1:length(mx)
-        @show i,mx[i]
-        @assert mx[i] == (i - 1) ÷ 5 + 1
-    end
-
-    #println("error first index")
-    #totsize = (5,3)
-    #x = 1:3
-    #mx = MeshedArray(totsize, x)
-
-    #println("error second index")
-    #totsize = (5,3)
-    #x = 1:5
-    #mx = MeshedArray(totsize, x')
-
-    println("broadcast access first index")
-    totsize = (5,3)
-    x = 21:25
-    mx = MeshedArray(totsize, x)
-    @show mx[3:6]
-    @assert mx[3:6] == [23, 24, 25, 21]
-
-    println("broadcast access second index")
-    totsize = (5,3)
-    x = 21:23
-    mx = MeshedArray(totsize, x')
-    @show mx[3:6]
-    @assert mx[3:6] == [21, 21, 21, 22]
 end
 
 
@@ -300,7 +213,7 @@ end
 
 #MyMap.main()
 #MyMap.main2d()
-MyMap.test_meshedarray()
+#MyMap.test_meshedarray()
 
 
 # vim: set sw=4 et sts=4 :

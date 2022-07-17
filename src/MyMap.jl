@@ -1,7 +1,11 @@
-#!/usr/bin/env julia
+@doc raw"""
+    MyMap
 
-
+This module defines functions `mymap` and `mymap2d`.
+"""
 module MyMap
+
+export mymap, mymap2d
 
 using Base.Threads
 
@@ -81,9 +85,6 @@ function calc_outsize(x, y)
     return (outsize...,)
 end
 
-function test_meshedarray()
-end
-
 
 function mymap2d!(out, fn, x, y)
     ntasks = prod(calc_outsize(x, y))
@@ -122,98 +123,26 @@ end
 
 function mymap2d(fn, x, y)
     Treturn = Base.return_types(fn, (eltype(x), eltype(y)))[1]
+
     outsize = calc_outsize(x, y)
-    @show outsize
+    #@show outsize, size(x), size(y)
+    if size(x) != outsize
+        x = MeshedArray(outsize, x)
+    end
+    if size(y) != outsize
+        y = MeshedArray(outsize, y)
+    end
+    #@show outsize, size(x), size(y)
+
     out = Array{Treturn}(undef, outsize...)
+
     mymap2d!(out, fn, x, y)
+
     return out
 end
 
 
-############### test 2d
-
-function test_work(i::Number, j::Number)
-    return log(j) + log(i)
 end
-
-function test_work(x, y)
-    return test_work.(x, y)
-end
-
-
-function main2d()
-    A = 1:10
-    B = 11:15
-    @assert calc_outsize(A, A) == (10,)
-    #@assert calc_outsize(A, B) == (10,)  # should throw error
-    @assert calc_outsize(A, B') == (10, 5)
-    @assert calc_outsize(A', B) == (5, 10)
-
-    r0 = test_work.(A, A)
-    r1 = mymap2d(test_work, A, A)
-    @show r0
-    @assert r0 == r1
-
-    r0 = test_work.(A .* ones(10)', ones(10).*A')
-    r1 = mymap2d(test_work, A .* ones(10)', ones(10).*A')
-    @show r0
-    @assert r0 == r1
-
-    r0 = test_work.(A, A')
-    r1 = mymap2d(test_work, A, A')
-    @show r0
-    @assert r0 == r1
-end
-
-
-
-############### test 1d
-
-function threadsloop(fn, arr)
-    Treturn = Base.return_types(fn, (eltype(arr),))[1]
-    out = similar(arr, Treturn)
-    @threads for i=1:length(arr)
-        out[i] = fn(arr[i])
-    end
-    return out
-end
-
-
-function test_work(i::Number)
-    #return i + 1.1
-    s = 0.0
-    for j=1:i^2
-        s += log(j*float(i))
-    end
-    return s
-end
-
-function test_work(arr)
-    return test_work.(arr)
-end
-
-
-function main()
-    A = 1:1000
-    test_work.(1:100)
-    mymap(test_work, 1:100)
-    threadsloop(test_work, 1:100)
-    #ThreadsX.map(test_work, 1:100)
-    #@time logA0 = test_work.(A)
-    @time logA1 = mymap(test_work, A)
-    @time logA2 = threadsloop(test_work, A)
-    #@show A logA1
-    @assert logA1 == logA2
-    #@assert logA1 == logA3
-    #@assert logA2 == logA0
-end
-
-
-end
-
-#MyMap.main()
-#MyMap.main2d()
-#MyMap.test_meshedarray()
 
 
 # vim: set sw=4 et sts=4 :

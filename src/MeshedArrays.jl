@@ -1,3 +1,10 @@
+@doc raw"""
+    MeshedArrays
+
+A 'MeshedArray' struct is a kind of view into a smaller array 'x'. It is useful
+for treating a 1D array as a 2D array ignoring one of the dimensions. A
+'MeshedArray' is an 'AbstractArray'.
+"""
 module MeshedArrays
 
 export MeshedArray
@@ -7,6 +14,7 @@ struct MeshedArray{T,N,Tarr,Tsz} <: AbstractArray{T,N}
     totsize::Tsz
     x::Tarr
 end
+
 MeshedArray(sz, x) = begin
     for n=1:ndims(x)
         if size(x,n) != 1
@@ -17,9 +25,14 @@ MeshedArray(sz, x) = begin
     end
     return MeshedArray{eltype(x), length(sz), typeof(x), typeof(sz)}(sz, x)
 end
+
+
 Base.ndims(a::MeshedArray{T,N}) where {T, N <: Integer} = N
+
 Base.size(a::MeshedArray) = a.totsize
+
 Base.length(a::MeshedArray) = prod(size(a))
+
 Base.getindex(a::MeshedArray, i::Int) = begin
     iout = 0
     szx = 1
@@ -33,6 +46,7 @@ Base.getindex(a::MeshedArray, i::Int) = begin
     end
     return a.x[iout+1]
 end
+
 Base.getindex(a::MeshedArray{T,N}, I::Vararg{Int,N}) where {T,N} = begin
     iout = 0
     szx = 1

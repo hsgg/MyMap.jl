@@ -1,6 +1,10 @@
 using MyMap
 using Test
+using Random
 using BenchmarkTools
+using Profile, FlameGraphs, ProfileView
+
+do_perf = false
 
 @testset "MyMap.jl" begin
 
@@ -11,15 +15,13 @@ using BenchmarkTools
         mx = MyMap.MeshedArray(totsize, x)
         @test length(mx) == prod(totsize)
 
-        test_access(mx) = mx[1]
+        test_access(mx2) = mx2[1]
 
-        println()
+        test_access(mx)
         @time test_access(mx)
         @btime $test_access($mx)
-        println()
         @time test_access(mx)
-        println()
-        #@time test_access(mx)
+        @time test_access(mx)
         #return
 
         for i=1:length(mx)
@@ -60,6 +62,32 @@ using BenchmarkTools
         mx = MyMap.MeshedArray(totsize, x')
         @debug mx[3:6]
         @test mx[3:6] == [21, 21, 21, 22]
+
+        if do_perf
+            println("MA: broadcast access performance")
+            y = 1:10100
+            #totsize = (length(y), 10000)
+            totsize = (10000, length(y))
+            my = MyMap.MeshedArray(totsize, y')
+            #my = rand(1:10100, totsize...)
+            dotest() = begin
+                Random.seed!(1234567890)
+                Base.GC.gc()
+                @time for i=1:10
+                    a,b = rand(1:length(my), 2)
+                    idxs = a:b
+                    my[idxs]
+                end
+            end
+            dotest()
+            dotest()
+            dotest()
+            @profview dotest()
+            ProfileView.closeall()
+            @profview dotest()
+            ProfileView.closeall()
+            @profview dotest()
+        end
     end
 
 
@@ -104,44 +132,92 @@ using BenchmarkTools
     @testset "mymap2d" begin
 
         function test_work(i::Number, j::Number)
+            #return 1.0
             return log(j) + log(i)
         end
 
-        test_work(x, y) = test_work.(x, y)
+        function test_work(x, y)
+            return test_work.(x, y)
+            #@time out = Array{Float64}(undef, length(x))
+            #@time for i=1:length(x)
+            #    println()
+            #    @time myx = x[i]
+            #    @time myy = y[i]
+            #    @time test_work(myx, myy)
+            #    #@time out[i] = z
+            #    @time out[i] = test_work(x[i], y[i])
+            #end
+            #return out
+        end
 
         function do_2d_test(a, b)
             @show size(a),size(b)
+            Base.GC.gc()
             @time r0 = test_work.(a, b)
+            Base.GC.gc()
             @time r1 = mymap2d(test_work, a, b)
             @debug r1
             @test size(r1) == size(r0)
             @test r0 == r1
         end
 
-        A = 1:100
-        B = 11:150
+        A = 1:10000
+        B = 11:1500
         @test MyMap.calc_outsize(A, A) == (length(A),)
         @test_throws Exception MyMap.calc_outsize(A, B)
         @test_throws Exception MyMap.calc_outsize(A', B')
         @test MyMap.calc_outsize(A, B') == (length(A), length(B))
         @test MyMap.calc_outsize(A', B) == (length(B), length(A))
 
+        println("2d: simple test")
         do_2d_test(A, A)
         do_2d_test(A, B')
         do_2d_test(A', B)
         do_2d_test(A', A')
 
         println("full 2D")
-        @time r0 = test_work.(A .* ones(length(A))', ones(length(A)).*A')
-        @time r1 = mymap2d(test_work, A .* ones(length(A))', ones(length(A)).*A')
-        @time r0 = test_work.(A .* ones(length(A))', ones(length(A)).*A')
-        @time r1 = mymap2d(test_work, A .* ones(length(A))', ones(length(A)).*A')
+        Base.GC.gc()
+        @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        Base.GC.gc()
+        @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        Base.GC.gc()
+        @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        Base.GC.gc()
+        @time r1 = mymap2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        Base.GC.gc()
+        @time r1 = mymap2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        Base.GC.gc()
+        @time r1 = mymap2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        Base.GC.gc()
+        @time r2 = mymap2d(test_work, A, B')
+        Base.GC.gc()
+        @time r2 = mymap2d(test_work, A, B')
+        Base.GC.gc()
+        @time r2 = mymap2d(test_work, A, B')
+        Base.GC.gc()
+        @time r3 = mymap2d(test_work, A', B)
+        Base.GC.gc()
+        @time r3 = mymap2d(test_work, A', B)
+        Base.GC.gc()
+        @time r3 = mymap2d(test_work, A', B)
         @test r0 == r1
+        @test r0 == r2
+        @test r0 == r3'
 
-        do_2d_test(A, A)
-        do_2d_test(A, B')
-        do_2d_test(A', B)
-        do_2d_test(A', A')
+        if do_perf
+            println("do perf")
+            Base.GC.gc()
+            @profview @time r2 = mymap2d(test_work, A, B')
+            ProfileView.closeall()
+            Base.GC.gc()
+            @profview @time r2 = mymap2d(test_work, A, B')
+            ProfileView.closeall()
+            Base.GC.gc()
+            @profview @time r2 = mymap2d(test_work, A, B')
+        end
     end
 
+    if do_perf
+        Base.prompt("Finish? ")
+    end
 end

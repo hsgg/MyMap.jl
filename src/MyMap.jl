@@ -14,7 +14,7 @@ include("MeshedArrays.jl")
 using .MeshedArrays
 
 
-function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.1, batch_maxadjust=2.0)
+function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=1.1, batch_maxadjust=2.0)
     adjust = batch_avgtime / time  # if we have accurate measurement of time
     adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
     adjust = max(1/batch_maxadjust, adjust)  # limit downward adjustment
@@ -58,6 +58,7 @@ function mymap!(out, fn, arr)
         end
 
         ifirst = iset[end] + 1
+        yield()  # let some threads finish so that i_per_thread[] gets updated asap
     end
 
     return out
@@ -95,15 +96,22 @@ function mymap2d!(out, fn, x, y)
     last_ifirst = Atomic{Int}(0)  # doesn't need to be atomic
     lk = Threads.Condition()
 
-    @sync while ifirst <= ntasks
-        iset = ifirst:min(ntasks, ifirst + i_per_thread[] - 1)
-        #@show ifirst,i_per_thread[]
+    all_indices = eachindex(out, x, y)
 
-        @spawn begin
-            time = @elapsed begin
-                idxs = eachindex(out, x, y)[iset]
-                out[idxs] .= fn(x[idxs], y[idxs])
-            end
+    @sync while ifirst <= ntasks
+        ilast = min(ntasks, ifirst + i_per_thread[] - 1)
+        iset = ifirst:ilast  # no need to interpolate local variables
+
+        Threads.@spawn begin
+            t0 = time_ns()
+
+            idxs = all_indices[iset]
+            xs = x[idxs]
+            ys = y[idxs]
+            outs = fn(xs, ys)
+            out[idxs] .= outs
+
+            time = (time_ns() - t0) / 1e9
 
             i_per_thread_new = calc_i_per_thread(time, length(iset))
             lock(lk) do
@@ -114,7 +122,8 @@ function mymap2d!(out, fn, x, y)
             end
         end
 
-        ifirst = iset[end] + 1
+        ifirst = ilast + 1
+        yield()  # let some threads finish so that i_per_thread[] gets updated asap
     end
 
     return out

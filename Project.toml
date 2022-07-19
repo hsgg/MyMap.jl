@@ -7,15 +7,16 @@ version = "0.1.0"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 
 [compat]
+StaticArrays = "1"
 julia = "1"
 
 [extras]
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 FlameGraphs = "08572546-2f56-4bcf-ba4e-bab62c3a3f89"
 Profile = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
 ProfileView = "c46f51b8-102a-5cf2-8d2c-8597cb0e0da7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
 test = ["Test", "BenchmarkTools", "FlameGraphs", "Profile", "ProfileView", "Random"]

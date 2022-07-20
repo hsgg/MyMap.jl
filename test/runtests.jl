@@ -3,6 +3,7 @@ using Test
 using Random
 using BenchmarkTools
 using Profile, FlameGraphs, ProfileView
+using Strided
 
 do_perf = false
 
@@ -103,6 +104,14 @@ do_perf = false
             return out
         end
 
+        function stridedloop(fn, arr)
+            Treturn = Base.return_types(fn, (eltype(arr),))[1]
+            out = similar(arr, Treturn)
+	    arrc = collect(arr)
+	    @strided @. out = fn(arrc)
+            return out
+        end
+
         function test_work(i::Number)
             #return i + 1.1
             s = 0.0
@@ -118,12 +127,21 @@ do_perf = false
         test_work.(1:10)
         mymap(test_work, 1:10)
         threadsloop(test_work, 1:10)
+        stridedloop(test_work, 1:10)
         #ThreadsX.map(test_work, 1:10)
         #@time logA0 = test_work.(A)
         @time logA1 = mymap(test_work, A)
+        @time logA1 = mymap(test_work, A)
+        @time logA1 = mymap(test_work, A)
         @time logA2 = threadsloop(test_work, A)
+        @time logA2 = threadsloop(test_work, A)
+        @time logA2 = threadsloop(test_work, A)
+        @time logA4 = stridedloop(test_work, A)
+        @time logA4 = stridedloop(test_work, A)
+        @time logA4 = stridedloop(test_work, A)
         #@show A logA1
         @test logA1 == logA2
+        @test logA1 == logA4
         #@assert logA1 == logA3
         #@assert logA2 == logA0
     end
@@ -156,9 +174,15 @@ do_perf = false
             @time r0 = test_work.(a, b)
             Base.GC.gc()
             @time r1 = mymap2d(test_work, a, b)
+            Base.GC.gc()
+	    ac = collect(a)
+	    bc = collect(b)
+            @time r2 = @strided @. test_work(ac, bc)
             @debug r1
             @test size(r1) == size(r0)
+            @test size(r2) == size(r0)
             @test r0 == r1
+            @test r0 == r2
         end
 
         A = 1:10000
@@ -200,9 +224,22 @@ do_perf = false
         @time r3 = mymap2d(test_work, A', B)
         Base.GC.gc()
         @time r3 = mymap2d(test_work, A', B)
+	@time Ac = collect(A)
+	@time Ac = collect(A)
+	@time Ac = collect(A)
+	@time Bc = collect(B')
+	@time Bc = collect(B')
+	@time Bc = collect(B')
+        Base.GC.gc()
+        @time r4 = @strided @. test_work(Ac, Bc)
+        Base.GC.gc()
+        @time r4 = @strided @. test_work(Ac, Bc)
+        Base.GC.gc()
+        @time r4 = @strided @. test_work(Ac, Bc)
         @test r0 == r1
         @test r0 == r2
         @test r0 == r3'
+        @test r0 == r4
 
         if do_perf
             println("do perf")

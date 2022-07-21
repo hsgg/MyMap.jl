@@ -9,6 +9,7 @@ Strided = "5e0ebb24-38b0-5f93-81fe-25c709ecae67"
 ThreadPools = "b189fb0b-2eb5-4ed4-bc0c-d34c51242431"
 
 [compat]
+Strided = "1"
 julia = "1"
 
 [extras]

@@ -3,6 +3,7 @@ using Test
 using Random
 using BenchmarkTools
 using Profile, FlameGraphs, ProfileView
+using Polyester
 using Strided
 
 do_perf = false
@@ -104,6 +105,15 @@ do_perf = false
             return out
         end
 
+        function polyesterloop(fn, arr)
+            Treturn = Base.return_types(fn, (eltype(arr),))[1]
+            out = similar(arr, Treturn)
+            @batch minbatch=50 for i=1:length(arr)
+                out[i] = fn(arr[i])
+            end
+            return out
+        end
+
         function stridedloop(fn, arr)
             Treturn = Base.return_types(fn, (eltype(arr),))[1]
             out = similar(arr, Treturn)
@@ -127,20 +137,29 @@ do_perf = false
         test_work.(1:10)
         mybroadcast(test_work, 1:10)
         threadsloop(test_work, 1:10)
+        polyesterloop(test_work, 1:10)
         stridedloop(test_work, 1:10)
         #ThreadsX.broadcast(test_work, 1:10)
         #@time logA0 = test_work.(A)
+        println("1D: mybroadcast:")
         @time logA1 = mybroadcast(test_work, A)
         @time logA1 = mybroadcast(test_work, A)
         @time logA1 = mybroadcast(test_work, A)
+        println("1D: @threads:")
         @time logA2 = threadsloop(test_work, A)
         @time logA2 = threadsloop(test_work, A)
         @time logA2 = threadsloop(test_work, A)
+        println("1D: @batch (Polyester):")
+        @time logA3 = polyesterloop(test_work, A)
+        @time logA3 = polyesterloop(test_work, A)
+        @time logA3 = polyesterloop(test_work, A)
+        println("1D: @strided:")
         @time logA4 = stridedloop(test_work, A)
         @time logA4 = stridedloop(test_work, A)
         @time logA4 = stridedloop(test_work, A)
         #@show A logA1
         @test logA1 == logA2
+        @test logA1 == logA3
         @test logA1 == logA4
         #@assert logA1 == logA3
         #@assert logA2 == logA0

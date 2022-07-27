@@ -77,7 +77,7 @@ end
 
 
 function mybroadcast(fn, arr)
-    Treturn = Base.return_types(fn, (eltype(arr),))[1]
+    Treturn = eltype(Base.return_types(fn, (eltype(arr),))[1])
     out = similar(arr, Treturn)
     mybroadcast!(out, fn, arr)
     return out
@@ -142,7 +142,7 @@ end
 
 
 function mybroadcast2d(fn, x, y)
-    Treturn = Base.return_types(fn, (eltype(x), eltype(y)))[1]
+    Treturn = eltype(Base.return_types(fn, (eltype(x), eltype(y)))[1])
 
     outsize = calc_outsize(x, y)
     #@show outsize, size(x), size(y)

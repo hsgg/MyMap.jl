@@ -1,11 +1,22 @@
 @doc raw"""
-    MyMap
+    MyBroadcast
 
-This module defines functions `mymap` and `mymap2d`.
+This module defines functions `mybroadcast` and `mybroadcast2d`. They behave
+similarly to a threaded broadcast, except that they try to batch iterations
+such that each batch takes about 0.1 seconds to perform.
+
+The idea is to automatically adjust the number of iterations per batch so that
+overhead per iteration is low and batch size is small so that the threads keep
+getting scheduled.
+
+For example, imagine that the execution time per iteration increases. With a
+static scheduler, this would mean that the first threads finish long before the
+last thread. This avoids that by adjusting the number of iterations so that
+each batch should take approximately 0.1 seconds.
 """
-module MyMap
+module MyBroadcast
 
-export mymap, mymap2d
+export mybroadcast, mybroadcast2d
 
 using Base.Threads
 
@@ -30,7 +41,7 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=1.1, batch_maxa
 end
 
 
-function mymap!(out, fn, arr)
+function mybroadcast!(out, fn, arr)
     ntasks = length(arr)
 
     ifirst = 1
@@ -65,10 +76,10 @@ function mymap!(out, fn, arr)
 end
 
 
-function mymap(fn, arr)
+function mybroadcast(fn, arr)
     Treturn = Base.return_types(fn, (eltype(arr),))[1]
     out = similar(arr, Treturn)
-    mymap!(out, fn, arr)
+    mybroadcast!(out, fn, arr)
     return out
 end
 
@@ -87,7 +98,7 @@ function calc_outsize(x, y)
 end
 
 
-function mymap2d!(out, fn, x, y)
+function mybroadcast2d!(out, fn, x, y)
     ntasks = prod(calc_outsize(x, y))
     @assert size(out) == calc_outsize(x, y)
 
@@ -130,7 +141,7 @@ function mymap2d!(out, fn, x, y)
 end
 
 
-function mymap2d(fn, x, y)
+function mybroadcast2d(fn, x, y)
     Treturn = Base.return_types(fn, (eltype(x), eltype(y)))[1]
 
     outsize = calc_outsize(x, y)
@@ -145,7 +156,7 @@ function mymap2d(fn, x, y)
 
     out = Array{Treturn}(undef, outsize...)
 
-    mymap2d!(out, fn, x, y)
+    mybroadcast2d!(out, fn, x, y)
 
     return out
 end

@@ -1,4 +1,4 @@
-using MyMap
+using MyBroadcast
 using Test
 using Random
 using BenchmarkTools
@@ -7,13 +7,13 @@ using Strided
 
 do_perf = false
 
-@testset "MyMap.jl" begin
+@testset "MyBroadcast.jl" begin
 
     @testset "MeshedArrays.jl" begin
         println("MA: first index")
         totsize = (5,3)
         x = 1:5
-        mx = MyMap.MeshedArray(totsize, x)
+        mx = MyBroadcast.MeshedArray(totsize, x)
         @test length(mx) == prod(totsize)
 
         test_access(mx2) = mx2[1]
@@ -33,7 +33,7 @@ do_perf = false
         println("MA: second index")
         totsize = (5,3)
         x = 1:3
-        mx = MyMap.MeshedArray(totsize, x')
+        mx = MyBroadcast.MeshedArray(totsize, x')
         @test length(mx) == prod(totsize)
         for i=1:length(mx)
             @debug i,mx[i]
@@ -43,24 +43,24 @@ do_perf = false
         println("MA: error first index")
         totsize = (5,3)
         x = 1:3
-        @test_throws Exception MyMap.MeshedArray(totsize, x)
+        @test_throws Exception MyBroadcast.MeshedArray(totsize, x)
 
         println("MA: error second index")
         totsize = (5,3)
         x = 1:5
-        @test_throws Exception MyMap.MeshedArray(totsize, x')
+        @test_throws Exception MyBroadcast.MeshedArray(totsize, x')
 
         println("MA: broadcast access first index")
         totsize = (5,3)
         x = 21:25
-        mx = MyMap.MeshedArray(totsize, x)
+        mx = MyBroadcast.MeshedArray(totsize, x)
         @debug mx[3:6]
         @test mx[3:6] == [23, 24, 25, 21]
 
         println("MA: broadcast access second index")
         totsize = (5,3)
         x = 21:23
-        mx = MyMap.MeshedArray(totsize, x')
+        mx = MyBroadcast.MeshedArray(totsize, x')
         @debug mx[3:6]
         @test mx[3:6] == [21, 21, 21, 22]
 
@@ -69,7 +69,7 @@ do_perf = false
             y = 1:10100
             #totsize = (length(y), 10000)
             totsize = (10000, length(y))
-            my = MyMap.MeshedArray(totsize, y')
+            my = MyBroadcast.MeshedArray(totsize, y')
             #my = rand(1:10100, totsize...)
             dotest() = begin
                 Random.seed!(1234567890)
@@ -92,8 +92,8 @@ do_perf = false
     end
 
 
-    @testset "mymap 1D" begin
-        println("mymap 1D")
+    @testset "mybroadcast 1D" begin
+        println("mybroadcast 1D")
 
         function threadsloop(fn, arr)
             Treturn = Base.return_types(fn, (eltype(arr),))[1]
@@ -125,14 +125,14 @@ do_perf = false
 
         A = 1:200
         test_work.(1:10)
-        mymap(test_work, 1:10)
+        mybroadcast(test_work, 1:10)
         threadsloop(test_work, 1:10)
         stridedloop(test_work, 1:10)
-        #ThreadsX.map(test_work, 1:10)
+        #ThreadsX.broadcast(test_work, 1:10)
         #@time logA0 = test_work.(A)
-        @time logA1 = mymap(test_work, A)
-        @time logA1 = mymap(test_work, A)
-        @time logA1 = mymap(test_work, A)
+        @time logA1 = mybroadcast(test_work, A)
+        @time logA1 = mybroadcast(test_work, A)
+        @time logA1 = mybroadcast(test_work, A)
         @time logA2 = threadsloop(test_work, A)
         @time logA2 = threadsloop(test_work, A)
         @time logA2 = threadsloop(test_work, A)
@@ -147,7 +147,7 @@ do_perf = false
     end
 
 
-    @testset "mymap2d" begin
+    @testset "mybroadcast2d" begin
 
         function test_work(i::Number, j::Number)
             #return 1.0
@@ -173,7 +173,7 @@ do_perf = false
             Base.GC.gc()
             @time r0 = test_work.(a, b)
             Base.GC.gc()
-            @time r1 = mymap2d(test_work, a, b)
+            @time r1 = mybroadcast2d(test_work, a, b)
             Base.GC.gc()
 	    ac = collect(a)
 	    bc = collect(b)
@@ -187,11 +187,11 @@ do_perf = false
 
         A = 1:10000
         B = 11:1500
-        @test MyMap.calc_outsize(A, A) == (length(A),)
-        @test_throws Exception MyMap.calc_outsize(A, B)
-        @test_throws Exception MyMap.calc_outsize(A', B')
-        @test MyMap.calc_outsize(A, B') == (length(A), length(B))
-        @test MyMap.calc_outsize(A', B) == (length(B), length(A))
+        @test MyBroadcast.calc_outsize(A, A) == (length(A),)
+        @test_throws Exception MyBroadcast.calc_outsize(A, B)
+        @test_throws Exception MyBroadcast.calc_outsize(A', B')
+        @test MyBroadcast.calc_outsize(A, B') == (length(A), length(B))
+        @test MyBroadcast.calc_outsize(A', B) == (length(B), length(A))
 
         println("2d: simple test")
         do_2d_test(A, A)
@@ -207,23 +207,23 @@ do_perf = false
         Base.GC.gc()
         @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
-        @time r1 = mymap2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        @time r1 = mybroadcast2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
-        @time r1 = mymap2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        @time r1 = mybroadcast2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
-        @time r1 = mymap2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        @time r1 = mybroadcast2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
-        @time r2 = mymap2d(test_work, A, B')
+        @time r2 = mybroadcast2d(test_work, A, B')
         Base.GC.gc()
-        @time r2 = mymap2d(test_work, A, B')
+        @time r2 = mybroadcast2d(test_work, A, B')
         Base.GC.gc()
-        @time r2 = mymap2d(test_work, A, B')
+        @time r2 = mybroadcast2d(test_work, A, B')
         Base.GC.gc()
-        @time r3 = mymap2d(test_work, A', B)
+        @time r3 = mybroadcast2d(test_work, A', B)
         Base.GC.gc()
-        @time r3 = mymap2d(test_work, A', B)
+        @time r3 = mybroadcast2d(test_work, A', B)
         Base.GC.gc()
-        @time r3 = mymap2d(test_work, A', B)
+        @time r3 = mybroadcast2d(test_work, A', B)
 	@time Ac = collect(A)
 	@time Ac = collect(A)
 	@time Ac = collect(A)
@@ -244,13 +244,13 @@ do_perf = false
         if do_perf
             println("do perf")
             Base.GC.gc()
-            @profview @time r2 = mymap2d(test_work, A, B')
+            @profview @time r2 = mybroadcast2d(test_work, A, B')
             ProfileView.closeall()
             Base.GC.gc()
-            @profview @time r2 = mymap2d(test_work, A, B')
+            @profview @time r2 = mybroadcast2d(test_work, A, B')
             ProfileView.closeall()
             Base.GC.gc()
-            @profview @time r2 = mymap2d(test_work, A, B')
+            @profview @time r2 = mybroadcast2d(test_work, A, B')
         end
     end
 

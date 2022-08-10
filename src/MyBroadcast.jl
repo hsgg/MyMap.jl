@@ -23,7 +23,6 @@ using Base.Threads
 
 include("MeshedArrays.jl")
 using .MeshedArrays
-#using LazyGrids
 
 
 function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.2, batch_maxadjust=2.0)
@@ -39,58 +38,6 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.2, batch_maxa
     i_per_thread_new = max(1, i_per_thread_new)  # must be at least 1
 
     return i_per_thread_new
-end
-
-
-function mybroadcast!(out, fn, arr)
-    ntasks = length(arr)
-
-    ifirst = 1
-    i_per_thread = Atomic{Int}(1)
-    last_ifirst = 0
-    lk = Threads.Condition()
-
-    num_free_threads = Atomic{Int}(Threads.nthreads())
-    @assert num_free_threads[] > 0
-
-    @sync while ifirst <= ntasks
-        while num_free_threads[] < 1
-            yield()
-        end
-        num_free_threads[] -= 1
-
-        iset = ifirst:min(ntasks, ifirst + i_per_thread[] - 1)
-        #@show ifirst,i_per_thread[]
-
-        @spawn begin
-            time = @elapsed begin
-                idxs = eachindex(out, arr)[iset]
-                out[idxs] .= fn(arr[idxs])
-            end
-
-            i_per_thread_new = calc_i_per_thread(time, length(iset))
-            lock(lk) do
-                if last_ifirst < iset[1]
-                    i_per_thread[] = i_per_thread_new
-                    last_ifirst = iset[1]
-                end
-            end
-            num_free_threads[] += 1
-        end
-
-        ifirst = iset[end] + 1
-        yield()  # let some threads finish so that i_per_thread[] gets updated asap
-    end
-
-    return out
-end
-
-
-function mybroadcast(fn, arr)
-    Treturn = eltype(Base.return_types(fn, (eltype(arr),))[1])
-    out = similar(arr, Treturn)
-    mybroadcast!(out, fn, arr)
-    return out
 end
 
 
@@ -110,9 +57,9 @@ function calc_outsize(x...)
 end
 
 
-function mybroadcast!(out, fn, x, y)
-    ntasks = prod(calc_outsize(x, y))
-    @assert size(out) == calc_outsize(x, y)
+function mybroadcast!(out, fn, x...)
+    ntasks = prod(calc_outsize(x...))
+    @assert size(out) == calc_outsize(x...)
 
     ifirst = 1
     i_per_thread = Atomic{Int}(1)
@@ -122,7 +69,7 @@ function mybroadcast!(out, fn, x, y)
     num_free_threads = Atomic{Int}(Threads.nthreads())
     @assert num_free_threads[] > 0
 
-    all_indices = eachindex(out, x, y)
+    all_indices = eachindex(out, x...)
 
     @sync while ifirst <= ntasks
         while num_free_threads[] < 1
@@ -140,16 +87,13 @@ function mybroadcast!(out, fn, x, y)
         ilast = min(ntasks, ifirst + i_per_thread[] - 1)
         iset = ifirst:ilast  # no need to interpolate local variables
 
-        Threads.@spawn begin
-            t0 = time_ns()
-
-            idxs = all_indices[iset]
-            xs = x[idxs]
-            ys = y[idxs]
-            outs = fn(xs, ys)
-            out[idxs] .= outs
-
-            time = (time_ns() - t0) / 1e9
+        @async Threads.@spawn begin
+            time = @elapsed begin
+                idxs = all_indices[iset]
+                xs = (x[i][idxs] for i=1:length(x))
+                outs = fn(xs...)
+                out[idxs] .= outs
+            end
 
             i_per_thread_new = calc_i_per_thread(time, length(iset))
             lock(lk) do
@@ -169,30 +113,22 @@ function mybroadcast!(out, fn, x, y)
 end
 
 
-function mybroadcast(fn, x, y)
-    Treturn = eltype(Base.return_types(fn, (eltype(x), eltype(y)))[1])
+function mybroadcast(fn, x...)
+    Treturn = eltype(Base.return_types(fn, (eltype.(x)...,))[1])
 
-    outsize = calc_outsize(x, y)
-    #@show outsize, size(x), size(y)
-    if size(x) != outsize
-        #d = findfirst(size(x) .> 1)
-        #x = LazyGrids.GridAR(outsize, x, d)
-        #@show outsize d
-        x = MeshedArray(outsize, x)
-        #@assert x == x0
+    outsize = calc_outsize(x...)
+    #@show outsize, size.(x)
+    xs = [y for y in x]
+    for i=1:length(xs)
+        if size(xs[i]) != outsize
+            xs[i] = MeshedArray(outsize, xs[i])
+        end
     end
-    if size(y) != outsize
-        #d = findfirst(size(y) .> 1)
-        #y = LazyGrids.GridAR(outsize, y, d)
-        #@show outsize d
-        y = MeshedArray(outsize, y)
-        #@assert y == y0
-    end
-    #@show outsize, size(x), size(y)
+    #@show outsize, size.(xs)
 
     out = Array{Treturn}(undef, outsize...)
 
-    mybroadcast!(out, fn, x, y)
+    mybroadcast!(out, fn, xs...)
 
     return out
 end

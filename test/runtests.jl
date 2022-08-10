@@ -210,8 +210,15 @@ do_perf = false
     @testset "mybroadcast 2D" begin
 
         function test_work!(i::Number, j::Number, buffer)
-            buffer .= float(i*j)  # fairly cheap calculation
-            return buffer[1]
+            buffer .= 1.0
+            return buffer[5]
+
+            #for m=1:length(buffer)
+            #    for n=1:(i*j)
+            #        buffer[m] = i * j / (m * n)
+            #    end
+            #end
+            #return buffer[1]
         end
 
         function test_work(i::Number, j::Number)
@@ -227,18 +234,13 @@ do_perf = false
         function do_2d_test(a, b)
             @show size(a),size(b)
             Base.GC.gc()
-            @time r0 = test_work.(a, b)
+            @time r0 = test_work!.(a, b, Ref(fill(0.0,100)))
             Base.GC.gc()
             @time r1 = mybroadcast(test_work, a, b)
             Base.GC.gc()
-	    ac = collect(a)
-	    bc = collect(b)
-            @time r2 = @strided @. test_work(ac, bc)
             @debug r1
             @test size(r1) == size(r0)
-            @test size(r2) == size(r0)
             @test r0 == r1
-            @test r0 == r2
         end
 
         println("2d: small test")
@@ -249,7 +251,7 @@ do_perf = false
         do_2d_test(a', b)
         do_2d_test(a', a')
 
-        A = 1:1000
+        A = 1:10000
         B = 11:1500
 
         println("2d: simple test")
@@ -288,7 +290,7 @@ do_perf = false
         Base.GC.gc()
         @time r3 = mybroadcast(test_work, A', B)
         println("mybroadcast 2d with LazyGrids:")
-        @time Al, Bl = ndgrid(A, B)
+        Al, Bl = ndgrid(A, B)
         Base.GC.gc()
         @time r4 = mybroadcast(test_work, Al, Bl)
         Base.GC.gc()
@@ -296,26 +298,26 @@ do_perf = false
         Base.GC.gc()
         @time r4 = mybroadcast(test_work, Al, Bl)
         println("strided with full arrays:")
-	@time Ac = collect(A)
-	@time Bc = collect(B')
+	Ac = collect(A)
+	Bc = collect(B')
         Base.GC.gc()
         @time r5 = @strided test_work.(Ac, Bc)
         Base.GC.gc()
         @time r5 = @strided test_work.(Ac, Bc)
         Base.GC.gc()
         @time r5 = @strided test_work.(Ac, Bc)
-        println("MeshedArrays with standard map:")
+        println("MeshedArrays with ThreadsX map:")
         outsize = MyBroadcast.calc_outsize(A, B')
-	@time Am = MyBroadcast.MeshedArray(outsize, A)
-	@time Bm = MyBroadcast.MeshedArray(outsize, B')
+	Am = MyBroadcast.MeshedArray(outsize, A)
+	Bm = MyBroadcast.MeshedArray(outsize, B')
         Base.GC.gc()
         @time r6 = ThreadsX.map(test_work, Am, Bm)
         Base.GC.gc()
         @time r6 = ThreadsX.map(test_work, Am, Bm)
         Base.GC.gc()
         @time r6 = ThreadsX.map(test_work, Am, Bm)
-        println("LazyGrids with standard map:")
-        @time ALG, BLG = ndgrid(A, B)  # LazyGrids
+        println("LazyGrids with ThreadsX map:")
+        ALG, BLG = ndgrid(A, B)  # LazyGrids
         Base.GC.gc()
         @time r7 = ThreadsX.map(test_work, ALG, BLG)
         Base.GC.gc()
@@ -334,13 +336,13 @@ do_perf = false
         if do_perf
             println("do perf")
             Base.GC.gc()
-            @profview @time r2 = mybroadcast(test_work, A, B')
+            @time @profview r2 = mybroadcast(test_work, A, B')
             ProfileView.closeall()
             Base.GC.gc()
-            @profview @time r2 = mybroadcast(test_work, A, B')
+            @time @profview r2 = mybroadcast(test_work, A, B')
             ProfileView.closeall()
             Base.GC.gc()
-            @profview @time r2 = mybroadcast(test_work, A, B')
+            @time @profview r2 = mybroadcast(test_work, A, B')
         end
     end
 

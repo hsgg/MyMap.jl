@@ -201,7 +201,7 @@ do_perf = false
         prog = Progress(length(A), 0.2, "Test $A: ")
         @time mybroadcast(A) do arr
             out = test_work.(arr)
-            next!(prog, step=length(arr), showvalues=[(:i_per_thread, length(arr))])
+            next!(prog, step=length(arr), showvalues=[(:batchsize, length(arr))])
             return out
         end
     end
@@ -209,27 +209,19 @@ do_perf = false
 
     @testset "mybroadcast 2D" begin
 
+        function test_work!(i::Number, j::Number, buffer)
+            buffer .= float(i*j)  # fairly cheap calculation
+            return buffer[1]
+        end
+
         function test_work(i::Number, j::Number)
-            return 1.0
-            s = 0.0
-            for m=1:i, n=1:j
-                s += m / n
-            end
-            return s
+            buffer = Array{Float64}(undef, 100)  # an allocation every iteration
+            return test_work!(i, j, buffer)
         end
 
         function test_work(x, y)
-            return test_work.(x, y)
-            #@time out = Array{Float64}(undef, length(x))
-            #@time for i=1:length(x)
-            #    println()
-            #    @time myx = x[i]
-            #    @time myy = y[i]
-            #    @time test_work(myx, myy)
-            #    #@time out[i] = z
-            #    @time out[i] = test_work(x[i], y[i])
-            #end
-            #return out
+            buffer = Array{Float64}(undef, 100)  # allocation is done only once per batch
+            return test_work!.(x, y, Ref(buffer))
         end
 
         function do_2d_test(a, b)
@@ -257,7 +249,7 @@ do_perf = false
         do_2d_test(a', b)
         do_2d_test(a', a')
 
-        A = 1:10000
+        A = 1:1000
         B = 11:1500
 
         println("2d: simple test")
@@ -269,11 +261,11 @@ do_perf = false
         println("full 2D")
         println("Single threaded broadcast:")
         Base.GC.gc()
-        @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        @time r0 = test_work!.(A .* ones(length(B))', ones(length(A)).*B', Ref(fill(0.0,100)))
         Base.GC.gc()
-        @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        @time r0 = test_work!.(A .* ones(length(B))', ones(length(A)).*B', Ref(fill(0.0,100)))
         Base.GC.gc()
-        @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        @time r0 = test_work!.(A .* ones(length(B))', ones(length(A)).*B', Ref(fill(0.0,100)))
         println("mybroadcast 2d full index arrays:")
         Base.GC.gc()
         @time r1 = mybroadcast(test_work, A .* ones(length(B))', ones(length(A)).*B')
@@ -307,11 +299,11 @@ do_perf = false
 	@time Ac = collect(A)
 	@time Bc = collect(B')
         Base.GC.gc()
-        @time r5 = @strided @. test_work(Ac, Bc)
+        @time r5 = @strided test_work.(Ac, Bc)
         Base.GC.gc()
-        @time r5 = @strided @. test_work(Ac, Bc)
+        @time r5 = @strided test_work.(Ac, Bc)
         Base.GC.gc()
-        @time r5 = @strided @. test_work(Ac, Bc)
+        @time r5 = @strided test_work.(Ac, Bc)
         println("MeshedArrays with standard map:")
         outsize = MyBroadcast.calc_outsize(A, B')
 	@time Am = MyBroadcast.MeshedArray(outsize, A)

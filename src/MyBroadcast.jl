@@ -94,14 +94,16 @@ function mybroadcast(fn, arr)
 end
 
 
-function calc_outsize(x, y)
-    outsize = fill(1, max(ndims(x), ndims(y)))
-    outsize[1:ndims(x)] .= size(x)
-    for d=1:ndims(y)
-        if outsize[d] == 1
-            outsize[d] = size(y, d)
-        elseif size(y, d) != 1 && outsize[d] != size(y, d)
-            error("size(x) = $(size(x)) and size(y) = $(size(y)) cannot be broadcast")
+function calc_outsize(x...)
+    outsize = fill(1, maximum(ndims.(x)))
+    outsize[1:ndims(x[1])] .= size(x[1])
+    for i=2:length(x)
+        for d=1:ndims(x[i])
+            if outsize[d] == 1
+                outsize[d] = size(x[i], d)
+            elseif size(x[i], d) != 1 && outsize[d] != size(x[i], d)
+                error("cannot find common broadcast dimensions size.(x) = $(size.(x))")
+            end
         end
     end
     return (outsize...,)

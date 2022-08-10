@@ -4,18 +4,26 @@ using Random
 using BenchmarkTools
 using Profile, FlameGraphs, ProfileView
 using Polyester
+using ThreadsX
 using Strided
+using LazyGrids
+using ProgressMeter
 
 do_perf = false
 
 @testset "MyBroadcast.jl" begin
 
-    @testset "MeshedArrays.jl" begin
+    false && @testset "MeshedArrays.jl" begin
         println("MA: first index")
         totsize = (5,3)
         x = 1:5
         mx = MyBroadcast.MeshedArray(totsize, x)
         @test length(mx) == prod(totsize)
+
+        lx = LazyGrids.GridOT(Int, totsize, 1)
+        @show mx lx
+        @test mx == lx
+        @test mx[1:end] == lx[1:end]
 
         test_access(mx2) = mx2[1]
 
@@ -24,7 +32,6 @@ do_perf = false
         @btime $test_access($mx)
         @time test_access(mx)
         @time test_access(mx)
-        #return
 
         for i=1:length(mx)
             @debug i,mx[i]
@@ -40,6 +47,10 @@ do_perf = false
             @debug i,mx[i]
             @test mx[i] == (i - 1) ÷ 5 + 1
         end
+        lx = LazyGrids.GridOT(Int, totsize, 2)
+        @show mx lx
+        @test mx == lx
+        @test mx[1:end] == lx[1:end]
 
         println("MA: error first index")
         totsize = (5,3)
@@ -163,14 +174,27 @@ do_perf = false
         @test logA1 == logA4
         #@assert logA1 == logA3
         #@assert logA2 == logA0
+
+
+        A = 1:1500
+        prog = Progress(length(A), 0.2, "Test $A: ")
+        @time mybroadcast(A) do arr
+            out = test_work.(arr)
+            next!(prog, step=length(arr), showvalues=[(:i_per_thread, length(arr))])
+            return out
+        end
     end
 
 
     @testset "mybroadcast2d" begin
 
         function test_work(i::Number, j::Number)
-            #return 1.0
-            return log(j) + log(i)
+            return 1.0
+            s = 0.0
+            for m=1:i, n=1:j
+                s += m / n
+            end
+            return s
         end
 
         function test_work(x, y)
@@ -212,6 +236,14 @@ do_perf = false
         @test MyBroadcast.calc_outsize(A, B') == (length(A), length(B))
         @test MyBroadcast.calc_outsize(A', B) == (length(B), length(A))
 
+        println("2d: small test")
+        a = 1:5
+        b = 1:3
+        do_2d_test(a, a)
+        do_2d_test(a, b')
+        do_2d_test(a', b)
+        do_2d_test(a', a')
+
         println("2d: simple test")
         do_2d_test(A, A)
         do_2d_test(A, B')
@@ -219,46 +251,77 @@ do_perf = false
         do_2d_test(A', A')
 
         println("full 2D")
+        println("Single threaded broadcast:")
         Base.GC.gc()
         @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
         @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
         @time r0 = test_work(A .* ones(length(B))', ones(length(A)).*B')
+        println("mybroadcast2d full index arrays:")
         Base.GC.gc()
         @time r1 = mybroadcast2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
         @time r1 = mybroadcast2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
         Base.GC.gc()
         @time r1 = mybroadcast2d(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        println("mybroadcast2d:")
         Base.GC.gc()
         @time r2 = mybroadcast2d(test_work, A, B')
         Base.GC.gc()
         @time r2 = mybroadcast2d(test_work, A, B')
         Base.GC.gc()
         @time r2 = mybroadcast2d(test_work, A, B')
+        println("mybroadcast2d inverse:")
         Base.GC.gc()
         @time r3 = mybroadcast2d(test_work, A', B)
         Base.GC.gc()
         @time r3 = mybroadcast2d(test_work, A', B)
         Base.GC.gc()
         @time r3 = mybroadcast2d(test_work, A', B)
-	@time Ac = collect(A)
-	@time Ac = collect(A)
+        println("mybroadcast2d with LazyGrids:")
+        @time Al, Bl = ndgrid(A, B)
+        Base.GC.gc()
+        @time r4 = mybroadcast2d(test_work, Al, Bl)
+        Base.GC.gc()
+        @time r4 = mybroadcast2d(test_work, Al, Bl)
+        Base.GC.gc()
+        @time r4 = mybroadcast2d(test_work, Al, Bl)
+        println("strided with full arrays:")
 	@time Ac = collect(A)
 	@time Bc = collect(B')
-	@time Bc = collect(B')
-	@time Bc = collect(B')
         Base.GC.gc()
-        @time r4 = @strided @. test_work(Ac, Bc)
+        @time r5 = @strided @. test_work(Ac, Bc)
         Base.GC.gc()
-        @time r4 = @strided @. test_work(Ac, Bc)
+        @time r5 = @strided @. test_work(Ac, Bc)
         Base.GC.gc()
-        @time r4 = @strided @. test_work(Ac, Bc)
+        @time r5 = @strided @. test_work(Ac, Bc)
+        println("MeshedArrays with standard map:")
+        outsize = MyBroadcast.calc_outsize(A, B')
+	@time Am = MyBroadcast.MeshedArray(outsize, A)
+	@time Bm = MyBroadcast.MeshedArray(outsize, B')
+        Base.GC.gc()
+        @time r6 = ThreadsX.map(test_work, Am, Bm)
+        Base.GC.gc()
+        @time r6 = ThreadsX.map(test_work, Am, Bm)
+        Base.GC.gc()
+        @time r6 = ThreadsX.map(test_work, Am, Bm)
+        println("LazyGrids with standard map:")
+        @time ALG, BLG = ndgrid(A, B)  # LazyGrids
+        Base.GC.gc()
+        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+        Base.GC.gc()
+        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+        Base.GC.gc()
+        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+        # strided?
         @test r0 == r1
         @test r0 == r2
         @test r0 == r3'
         @test r0 == r4
+        @test r0 == r5
+        @test r0 == r6
+        @test r0 == r7
 
         if do_perf
             println("do perf")

@@ -1,9 +1,9 @@
 @doc raw"""
     MyBroadcast
 
-This module defines functions `mybroadcast` and `mybroadcast2d`. They behave
-similarly to a threaded broadcast, except that they try to batch iterations
-such that each batch takes about 0.2 seconds to perform.
+This module defines the function `mybroadcast`. It behave similarly to a
+threaded broadcast, except that it tries to batch iterations such that each
+batch takes about 0.2 seconds to perform.
 
 The idea is to automatically adjust the number of iterations per batch so that
 overhead per iteration is low and batch size is small so that the threads keep
@@ -16,14 +16,14 @@ each batch should take approximately 0.2 seconds.
 """
 module MyBroadcast
 
-export mybroadcast, mybroadcast2d
+export mybroadcast
 
 using Base.Threads
 
 
 include("MeshedArrays.jl")
 using .MeshedArrays
-using LazyGrids
+#using LazyGrids
 
 
 function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.2, batch_maxadjust=2.0)
@@ -108,7 +108,7 @@ function calc_outsize(x, y)
 end
 
 
-function mybroadcast2d!(out, fn, x, y)
+function mybroadcast!(out, fn, x, y)
     ntasks = prod(calc_outsize(x, y))
     @assert size(out) == calc_outsize(x, y)
 
@@ -167,7 +167,7 @@ function mybroadcast2d!(out, fn, x, y)
 end
 
 
-function mybroadcast2d(fn, x, y)
+function mybroadcast(fn, x, y)
     Treturn = eltype(Base.return_types(fn, (eltype(x), eltype(y)))[1])
 
     outsize = calc_outsize(x, y)
@@ -190,7 +190,7 @@ function mybroadcast2d(fn, x, y)
 
     out = Array{Treturn}(undef, outsize...)
 
-    mybroadcast2d!(out, fn, x, y)
+    mybroadcast!(out, fn, x, y)
 
     return out
 end

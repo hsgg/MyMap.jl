@@ -13,7 +13,7 @@ do_perf = false
 
 @testset "MyBroadcast.jl" begin
 
-    false && @testset "MeshedArrays.jl" begin
+    @testset "MeshedArrays.jl" begin
         println("MA: first index")
         totsize = (5,3)
         x = 1:5

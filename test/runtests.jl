@@ -252,7 +252,7 @@ do_perf = false
         do_2d_test(a', a')
 
         A = 1:10000
-        B = 11:1500
+        B = 11:15000
 
         println("2d: simple test")
         do_2d_test(A, A)
@@ -297,41 +297,41 @@ do_perf = false
         @time r4 = mybroadcast(test_work, Al, Bl)
         Base.GC.gc()
         @time r4 = mybroadcast(test_work, Al, Bl)
-        println("strided with full arrays:")
-	Ac = collect(A)
-	Bc = collect(B')
-        Base.GC.gc()
-        @time r5 = @strided test_work.(Ac, Bc)
-        Base.GC.gc()
-        @time r5 = @strided test_work.(Ac, Bc)
-        Base.GC.gc()
-        @time r5 = @strided test_work.(Ac, Bc)
-        println("MeshedArrays with ThreadsX map:")
-        outsize = MyBroadcast.calc_outsize(A, B')
-	Am = MyBroadcast.MeshedArray(outsize, A)
-	Bm = MyBroadcast.MeshedArray(outsize, B')
-        Base.GC.gc()
-        @time r6 = ThreadsX.map(test_work, Am, Bm)
-        Base.GC.gc()
-        @time r6 = ThreadsX.map(test_work, Am, Bm)
-        Base.GC.gc()
-        @time r6 = ThreadsX.map(test_work, Am, Bm)
-        println("LazyGrids with ThreadsX map:")
-        ALG, BLG = ndgrid(A, B)  # LazyGrids
-        Base.GC.gc()
-        @time r7 = ThreadsX.map(test_work, ALG, BLG)
-        Base.GC.gc()
-        @time r7 = ThreadsX.map(test_work, ALG, BLG)
-        Base.GC.gc()
-        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+        #println("strided with full arrays:")
+        #Ac = collect(A)
+        #Bc = collect(B')
+        #Base.GC.gc()
+        #@time r5 = @strided test_work.(Ac, Bc)
+        #Base.GC.gc()
+        #@time r5 = @strided test_work.(Ac, Bc)
+        #Base.GC.gc()
+        #@time r5 = @strided test_work.(Ac, Bc)
+        #println("MeshedArrays with ThreadsX map:")
+        #outsize = MyBroadcast.calc_outsize(A, B')
+        #Am = MyBroadcast.MeshedArray(outsize, A)
+        #Bm = MyBroadcast.MeshedArray(outsize, B')
+        #Base.GC.gc()
+        #@time r6 = ThreadsX.map(test_work, Am, Bm)
+        #Base.GC.gc()
+        #@time r6 = ThreadsX.map(test_work, Am, Bm)
+        #Base.GC.gc()
+        #@time r6 = ThreadsX.map(test_work, Am, Bm)
+        #println("LazyGrids with ThreadsX map:")
+        #ALG, BLG = ndgrid(A, B)  # LazyGrids
+        #Base.GC.gc()
+        #@time r7 = ThreadsX.map(test_work, ALG, BLG)
+        #Base.GC.gc()
+        #@time r7 = ThreadsX.map(test_work, ALG, BLG)
+        #Base.GC.gc()
+        #@time r7 = ThreadsX.map(test_work, ALG, BLG)
         # strided?
         @test r0 == r1
         @test r0 == r2
         @test r0 == r3'
         @test r0 == r4
-        @test r0 == r5
-        @test r0 == r6
-        @test r0 == r7
+        #@test r0 == r5
+        #@test r0 == r6
+        #@test r0 == r7
 
         if do_perf
             println("do perf")

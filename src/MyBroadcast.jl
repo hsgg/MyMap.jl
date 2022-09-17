@@ -13,6 +13,12 @@ For example, imagine that the execution time per iteration increases. With a
 static scheduler, this would mean that the first threads finish long before the
 last thread. This avoids that by adjusting the number of iterations so that
 each batch should take approximately 0.2 seconds.
+
+So why batch iterations? Imagine you need to allocate a buffer for each
+iteration, and this buffer can be shared for sequentially run iterations.
+Allocating a separate buffer would add a lot of overhead, so that traditional
+`map()` can take longer than the serial implementation. Batching avoids that
+pitfall.
 """
 module MyBroadcast
 
@@ -64,6 +70,9 @@ function calc_newbatchsize!(oldbatchsize, newbatchsizechannel)
         newbatchsize = take!(newbatchsizechannel)
         batchsize += newbatchsize
         n += 1
+        if newbatchsize < 1
+            return newbatchsize
+        end
         #@show n,batchsize,newbatchsize
     end
     avgbatchsize = batchsize / n
@@ -78,7 +87,7 @@ function calc_newbatchsize!(oldbatchsize, newbatchsizechannel)
 end
 
 
-function clear_channel(channel)
+function clear_channel!(channel)
     while isready(channel)
         take!(channel)
     end
@@ -94,13 +103,14 @@ function mybroadcast!(out, fn, x...)
     batchsize = 1
     newbatchsizechannel = Channel{Int}(2 * num_threads)
     batchchannel = Channel{UnitRange{Int}}(2 * num_threads)
+    errorchannel = Channel{Any}(2 * num_threads)
 
     all_indices = eachindex(out, x...)
 
     # worker threads process the data
     tsk = Task[]
     for _ in 1:num_threads
-        t = @spawn begin
+        t = Threads.@spawn try
             iset = take!(batchchannel)
             while length(iset) > 0
                 time = @elapsed begin
@@ -120,31 +130,69 @@ function mybroadcast!(out, fn, x...)
                 put!(newbatchsizechannel, newbatchsize)
                 iset = take!(batchchannel)
             end
+        catch e
+            if e isa InvalidStateException
+                @info "Exiting thread $(Threads.threadid()) due to closed channel"
+            else  # we caused the exception
+                close(newbatchsizechannel)
+                close(batchchannel)
+                bt = catch_backtrace()
+                @warn "Exception in thread $(Threads.threadid()):\n  $e"
+                put!(errorchannel, (Threads.threadid(), e, bt))
+            end
         end
         push!(tsk, t)
     end
 
-    # feed the workers
-    ifirst = 1
-    while ifirst <= ntasks
-        batchsize = calc_newbatchsize!(batchsize, newbatchsizechannel)
 
-        ilast = min(ntasks, ifirst + batchsize - 1)
-        #@show ifirst,ilast-ifirst
+    try
+        # feed the workers
+        ifirst = 1
+        while ifirst <= ntasks
+            #@show ifirst
+            batchsize = calc_newbatchsize!(batchsize, newbatchsizechannel)
 
-        put!(batchchannel, ifirst:ilast)
+            ilast = min(ntasks, ifirst + batchsize - 1)
+            #@show ifirst,ilast-ifirst+1
 
-        ifirst = ilast + 1
+            put!(batchchannel, ifirst:ilast)
+
+            ifirst = ilast + 1
+        end
+
+
+        # notify workers of the end
+        for _ in 1:num_threads
+            clear_channel!(newbatchsizechannel)
+            put!(batchchannel, 1:0)  # tell thread to exit
+        end
+        clear_channel!(newbatchsizechannel)
+
+    catch e
+        if !(e isa InvalidStateException)
+            rethrow(e)
+        end
     end
 
-    # close channels
-    for _ in 1:num_threads
-        clear_channel(newbatchsizechannel)
-        put!(batchchannel, 1:0)  # tell thread to exit
-    end
-    clear_channel(newbatchsizechannel)
 
-    wait.(tsk)
+    wait.(tsk)  # all tasks should finish cleanly
+
+
+    num_failed_tasks = 0
+    while isready(errorchannel)
+        num_failed_tasks += 1
+        tid, e, stack = take!(errorchannel)
+        println(stdout)
+        @error "Exception in thread $tid of $num_threads:\n  $e"
+        showerror(stdout, e, stack)
+        println(stdout)
+    end
+    if num_failed_tasks > 0
+        println(stdout)
+        @error "Exceptions in threads" num_failed_tasks num_threads
+        error("Exceptions in threads")
+    end
+
 
     return out
 end

@@ -20,11 +20,11 @@ For example, imagine that you iterate over `i=1:1_000_000` and the execution
 time per iteration increases with `i`. With a static scheduler that divides the
 tasks up into batches of equal numbers of iterations, this would mean that the
 first threads finish long before the last thread. This avoids that by adjusting
-the number of iterations so that each batch should take approximately 0.2
+the number of iterations so that each batch should take approximately 0.5
 seconds.
 
-Why 0.2 seconds? Because we are humans, and 0.2 seconds makes it close enough
-to instantaneous. Maybe it should 0.5 seconds. Maybe the overhead should be
+Why 0.5 seconds? Because we are humans, and 0.5 seconds makes it close enough
+to instantaneous. Maybe it should 0.2 seconds. Maybe the overhead should be
 measured and folded into the equation. Maybe.
 
 Furthermore, the batching of iterations is advantageous if a buffer needs to be

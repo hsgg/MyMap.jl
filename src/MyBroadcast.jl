@@ -3,7 +3,7 @@
 
 This module defines the function `mybroadcast`. It behave similarly to a
 threaded broadcast, except that it tries to batch iterations such that each
-batch takes about 0.2 seconds to perform.
+batch takes about 0.5 seconds to perform.
 
 The idea is to automatically adjust the number of iterations per batch so that
 overhead per iteration is low and batch size is small so that the threads keep
@@ -12,7 +12,7 @@ getting scheduled.
 For example, imagine that the execution time per iteration increases. With a
 static scheduler, this would mean that the first threads finish long before the
 last thread. This avoids that by adjusting the number of iterations so that
-each batch should take approximately 0.2 seconds.
+each batch should take approximately 0.5 seconds.
 
 So why batch iterations? Imagine you need to allocate a buffer for each
 iteration, and this buffer can be shared for sequentially run iterations.
@@ -31,7 +31,7 @@ include("MeshedArrays.jl")
 using .MeshedArrays
 
 
-function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.2, batch_maxadjust=2.0)
+function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.5, batch_maxadjust=2.0)
     adjust = batch_avgtime / time  # if we have accurate measurement of time
     adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
     adjust = max(1/batch_maxadjust, adjust)  # limit downward adjustment
@@ -101,9 +101,9 @@ function mybroadcast!(out, fn, x...)
     num_threads = Threads.nthreads()
 
     batchsize = 1
-    newbatchsizechannel = Channel{Int}(2 * num_threads)
-    batchchannel = Channel{UnitRange{Int}}(2 * num_threads)
-    errorchannel = Channel{Any}(2 * num_threads)
+    newbatchsizechannel = Channel{Int}(num_threads)
+    batchchannel = Channel{UnitRange{Int}}(num_threads)
+    errorchannel = Channel{Any}(num_threads)
 
     all_indices = eachindex(out, x...)
 
@@ -115,10 +115,6 @@ function mybroadcast!(out, fn, x...)
             while length(iset) > 0
                 time = @elapsed begin
                     idxs = all_indices[iset]
-
-                    #xs = x[1][idxs]
-                    #ys = x[2][idxs]
-                    #outs = fn(xs, ys)
 
                     xs = (x[i][idxs] for i=1:length(x))
                     outs = fn(xs...)

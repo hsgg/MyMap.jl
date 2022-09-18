@@ -210,6 +210,10 @@ do_perf = false
     @testset "mybroadcast 2D" begin
 
         function test_work!(i::Number, j::Number, buffer)
+            #len = length(buffer)
+            #@. buffer = (1:len) * i / j
+            #return sum(buffer)
+
             buffer .= 1.0
             return buffer[5]
 
@@ -243,6 +247,7 @@ do_perf = false
             @test r0 == r1
         end
 
+        println()
         println("2d: small test")
         a = 1:5
         b = 1:3
@@ -254,27 +259,49 @@ do_perf = false
         A = 1:10000
         B = 11:15000
 
+        Af = A .* ones(length(B))'
+        Bf = ones(length(A)) .* B'
+
+        outsize = MyBroadcast.calc_outsize(A, B')
+        Am = MyBroadcast.MeshedArray(outsize, A)
+        Bm = MyBroadcast.MeshedArray(outsize, B')
+
+        println()
         println("2d: simple test")
         do_2d_test(A, A)
         do_2d_test(A, B')
         do_2d_test(A', B)
         do_2d_test(A', A')
 
+        println()
         println("full 2D")
         println("Single threaded broadcast:")
         Base.GC.gc()
-        @time r0 = test_work!.(A .* ones(length(B))', ones(length(A)).*B', Ref(fill(0.0,100)))
+        @time r0 = test_work!.(Af, Bf, Ref(fill(0.0,100)))
         Base.GC.gc()
-        @time r0 = test_work!.(A .* ones(length(B))', ones(length(A)).*B', Ref(fill(0.0,100)))
+        @time r0 = test_work!.(Af, Bf, Ref(fill(0.0,100)))
         Base.GC.gc()
-        @time r0 = test_work!.(A .* ones(length(B))', ones(length(A)).*B', Ref(fill(0.0,100)))
+        @time r0 = test_work!.(Af, Bf, Ref(fill(0.0,100)))
+
+        println()
+        println("Single threaded broadcast with MeshedArrays:")
+        Base.GC.gc()
+        @time r0 = test_work!.(Am, Bm, Ref(fill(0.0,100)))
+        Base.GC.gc()
+        @time r0 = test_work!.(Am, Bm, Ref(fill(0.0,100)))
+        Base.GC.gc()
+        @time r0 = test_work!.(Am, Bm, Ref(fill(0.0,100)))
+
+        println()
         println("mybroadcast 2d full index arrays:")
         Base.GC.gc()
-        @time r1 = mybroadcast(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        @time r1 = mybroadcast(test_work, Af, Bf)
         Base.GC.gc()
-        @time r1 = mybroadcast(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        @time r1 = mybroadcast(test_work, Af, Bf)
         Base.GC.gc()
-        @time r1 = mybroadcast(test_work, A .* ones(length(B))', ones(length(A)).*B')
+        @time r1 = mybroadcast(test_work, Af, Bf)
+
+        println()
         println("mybroadcast 2D:")
         Base.GC.gc()
         @time r2 = mybroadcast(test_work, A, B')
@@ -282,6 +309,8 @@ do_perf = false
         @time r2 = mybroadcast(test_work, A, B')
         Base.GC.gc()
         @time r2 = mybroadcast(test_work, A, B')
+
+        println()
         println("mybroadcast 2d inverse:")
         Base.GC.gc()
         @time r3 = mybroadcast(test_work, A', B)
@@ -289,6 +318,8 @@ do_perf = false
         @time r3 = mybroadcast(test_work, A', B)
         Base.GC.gc()
         @time r3 = mybroadcast(test_work, A', B)
+
+        println()
         println("mybroadcast 2d with LazyGrids:")
         Al, Bl = ndgrid(A, B)
         Base.GC.gc()
@@ -297,41 +328,49 @@ do_perf = false
         @time r4 = mybroadcast(test_work, Al, Bl)
         Base.GC.gc()
         @time r4 = mybroadcast(test_work, Al, Bl)
-        #println("strided with full arrays:")
-        #Ac = collect(A)
-        #Bc = collect(B')
-        #Base.GC.gc()
-        #@time r5 = @strided test_work.(Ac, Bc)
-        #Base.GC.gc()
-        #@time r5 = @strided test_work.(Ac, Bc)
-        #Base.GC.gc()
-        #@time r5 = @strided test_work.(Ac, Bc)
-        #println("MeshedArrays with ThreadsX map:")
-        #outsize = MyBroadcast.calc_outsize(A, B')
-        #Am = MyBroadcast.MeshedArray(outsize, A)
-        #Bm = MyBroadcast.MeshedArray(outsize, B')
-        #Base.GC.gc()
-        #@time r6 = ThreadsX.map(test_work, Am, Bm)
-        #Base.GC.gc()
-        #@time r6 = ThreadsX.map(test_work, Am, Bm)
-        #Base.GC.gc()
-        #@time r6 = ThreadsX.map(test_work, Am, Bm)
-        #println("LazyGrids with ThreadsX map:")
-        #ALG, BLG = ndgrid(A, B)  # LazyGrids
-        #Base.GC.gc()
-        #@time r7 = ThreadsX.map(test_work, ALG, BLG)
-        #Base.GC.gc()
-        #@time r7 = ThreadsX.map(test_work, ALG, BLG)
-        #Base.GC.gc()
-        #@time r7 = ThreadsX.map(test_work, ALG, BLG)
+
+        println()
+        println("strided with full arrays:")
+        Ac = collect(A)
+        Bc = collect(B')
+        Base.GC.gc()
+        @time r5 = @strided test_work.(Ac, Bc)
+        Base.GC.gc()
+        @time r5 = @strided test_work.(Ac, Bc)
+        Base.GC.gc()
+        @time r5 = @strided test_work.(Ac, Bc)
+        println()
+
+        println("MeshedArrays with ThreadsX map:")
+        outsize = MyBroadcast.calc_outsize(A, B')
+        Am = MyBroadcast.MeshedArray(outsize, A)
+        Bm = MyBroadcast.MeshedArray(outsize, B')
+        Base.GC.gc()
+        @time r6 = ThreadsX.map(test_work, Am, Bm)
+        Base.GC.gc()
+        @time r6 = ThreadsX.map(test_work, Am, Bm)
+        Base.GC.gc()
+        @time r6 = ThreadsX.map(test_work, Am, Bm)
+        println()
+
+        println("LazyGrids with ThreadsX map:")
+        ALG, BLG = ndgrid(A, B)  # LazyGrids
+        Base.GC.gc()
+        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+        Base.GC.gc()
+        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+        Base.GC.gc()
+        @time r7 = ThreadsX.map(test_work, ALG, BLG)
+
+        println()
         # strided?
-        @test r0 == r1
-        @test r0 == r2
-        @test r0 == r3'
-        @test r0 == r4
-        #@test r0 == r5
-        #@test r0 == r6
-        #@test r0 == r7
+        @test r0 ≈ r1  rtol=eps(1.0)
+        @test r0 ≈ r2  rtol=eps(1.0)
+        @test r0 ≈ r3'  rtol=eps(1.0)
+        @test r0 ≈ r4  rtol=eps(1.0)
+        @test r0 ≈ r5  rtol=eps(1.0)
+        @test r0 ≈ r6  rtol=eps(1.0)
+        @test r0 ≈ r7  rtol=eps(1.0)
 
         if do_perf
             println("do perf")

@@ -63,19 +63,8 @@ function calc_outsize(x...)
 end
 
 
-function calc_newbatchsize!(oldbatchsize, newbatchsizechannel)
-    batchsize = oldbatchsize
-    n = 1
-    while isready(newbatchsizechannel)
-        newbatchsize = take!(newbatchsizechannel)
-        batchsize += newbatchsize
-        n += 1
-        if newbatchsize < 1
-            return newbatchsize
-        end
-        #@show n,batchsize,newbatchsize
-    end
-    avgbatchsize = batchsize / n
+function calc_newbatchsize(oldbatchsize, newbatchsize)
+    avgbatchsize = (oldbatchsize + 2 * newbatchsize) / 3
 
     if avgbatchsize < oldbatchsize
         batchsize = floor(Int, avgbatchsize)
@@ -87,32 +76,32 @@ function calc_newbatchsize!(oldbatchsize, newbatchsizechannel)
 end
 
 
-function clear_channel!(channel)
-    while isready(channel)
-        take!(channel)
-    end
-end
-
-
 function mybroadcast!(out, fn, x...)
     ntasks = prod(calc_outsize(x...))
     @assert size(out) == calc_outsize(x...)
 
     num_threads = Threads.nthreads()
 
-    batchsize = 1
-    newbatchsizechannel = Channel{Int}(num_threads)
-    batchchannel = Channel{UnitRange{Int}}(num_threads)
     errorchannel = Channel{Any}(num_threads)
+
+    nextifirstchannel = Channel{Int}(1)  # this channel is used to synchronize all the threads
+    put!(nextifirstchannel, 1)
 
     all_indices = eachindex(out, x...)
 
     # worker threads process the data
-    tsk = Task[]
-    for _ in 1:num_threads
-        t = Threads.@spawn try
-            iset = take!(batchchannel)
+    @threads for _ in 1:num_threads
+        try
+            batchsize = 1
+
+            # worker threads feed themselves
+            ifirst = take!(nextifirstchannel)
+            ilast = min(ntasks, ifirst + batchsize - 1)
+            put!(nextifirstchannel, ilast + 1)
+            iset = ifirst:ilast
+
             while length(iset) > 0
+
                 time = @elapsed begin
                     idxs = all_indices[iset]
 
@@ -123,55 +112,24 @@ function mybroadcast!(out, fn, x...)
                 end
 
                 newbatchsize = calc_i_per_thread(time, length(iset))
-                put!(newbatchsizechannel, newbatchsize)
-                iset = take!(batchchannel)
+                batchsize = calc_newbatchsize(batchsize, newbatchsize)
+
+                ifirst = take!(nextifirstchannel)
+                ilast = min(ntasks, ifirst + batchsize - 1)
+                put!(nextifirstchannel, ilast + 1)
+                iset = ifirst:ilast
             end
         catch e
             if e isa InvalidStateException
                 @info "Exiting thread $(Threads.threadid()) due to closed channel"
             else  # we caused the exception
-                close(newbatchsizechannel)
-                close(batchchannel)
+                close(nextifirstchannel)
                 bt = catch_backtrace()
                 @warn "Exception in thread $(Threads.threadid()):\n  $e"
                 put!(errorchannel, (Threads.threadid(), e, bt))
             end
         end
-        push!(tsk, t)
     end
-
-
-    try
-        # feed the workers
-        ifirst = 1
-        while ifirst <= ntasks
-            #@show ifirst
-            batchsize = calc_newbatchsize!(batchsize, newbatchsizechannel)
-
-            ilast = min(ntasks, ifirst + batchsize - 1)
-            #@show ifirst,ilast-ifirst+1
-
-            put!(batchchannel, ifirst:ilast)
-
-            ifirst = ilast + 1
-        end
-
-
-        # notify workers of the end
-        for _ in 1:num_threads
-            clear_channel!(newbatchsizechannel)
-            put!(batchchannel, 1:0)  # tell thread to exit
-        end
-        clear_channel!(newbatchsizechannel)
-
-    catch e
-        if !(e isa InvalidStateException)
-            rethrow(e)
-        end
-    end
-
-
-    wait.(tsk)  # all tasks should finish cleanly
 
 
     num_failed_tasks = 0
@@ -188,7 +146,6 @@ function mybroadcast!(out, fn, x...)
         @error "Exceptions in threads" num_failed_tasks num_threads
         error("Exceptions in threads")
     end
-
 
     return out
 end

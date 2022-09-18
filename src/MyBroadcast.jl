@@ -41,9 +41,8 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.5, batch_maxa
     else
         i_per_thread_new = ceil(Int, adjust * i_per_thread_old)
     end
-    i_per_thread_new = max(1, i_per_thread_new)  # must be at least 1
 
-    return i_per_thread_new
+    return max(1, i_per_thread_new)  # must be at least 1
 end
 
 
@@ -60,19 +59,6 @@ function calc_outsize(x...)
         end
     end
     return (outsize...,)
-end
-
-
-function calc_newbatchsize(oldbatchsize, newbatchsize)
-    avgbatchsize = (oldbatchsize + 2 * newbatchsize) / 3
-
-    if avgbatchsize < oldbatchsize
-        batchsize = floor(Int, avgbatchsize)
-    else
-        batchsize = ceil(Int, avgbatchsize)
-    end
-
-    return max(batchsize, 1)
 end
 
 
@@ -111,8 +97,7 @@ function mybroadcast!(out, fn, x...)
                     out[idxs] .= outs
                 end
 
-                newbatchsize = calc_i_per_thread(time, length(iset))
-                batchsize = calc_newbatchsize(batchsize, newbatchsize)
+                batchsize = calc_i_per_thread(time, length(iset))
 
                 ifirst = take!(nextifirstchannel)
                 ilast = min(ntasks, ifirst + batchsize - 1)
@@ -122,8 +107,9 @@ function mybroadcast!(out, fn, x...)
         catch e
             if e isa InvalidStateException
                 @info "Exiting thread $(Threads.threadid()) due to closed channel"
-            else  # we caused the exception
-                close(nextifirstchannel)
+            else
+                # we caused the exception
+                close(nextifirstchannel)  # notify other threads
                 bt = catch_backtrace()
                 @warn "Exception in thread $(Threads.threadid()):\n  $e"
                 put!(errorchannel, (Threads.threadid(), e, bt))

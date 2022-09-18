@@ -257,7 +257,7 @@ do_perf = false
         do_2d_test(a', a')
 
         A = 1:10000
-        B = 11:15000
+        B = 11:1500  # with another 0, GC goes crazy
 
         Af = A .* ones(length(B))'
         Bf = ones(length(A)) .* B'
@@ -311,7 +311,7 @@ do_perf = false
         @time r2 = mybroadcast(test_work, A, B')
 
         println()
-        println("mybroadcast 2d inverse:")
+        println("mybroadcast 2d transpose:")
         Base.GC.gc()
         @time r3 = mybroadcast(test_work, A', B)
         Base.GC.gc()
@@ -410,8 +410,8 @@ do_perf = false
         num_batches = fill(0, Threads.nthreads())
         num_tasks_per_batch = fill(0.0, Threads.nthreads())
 
-        A = 1:100
-        B = 11:1500
+        A = 1:1000
+        B = 11:150
 
         mybroadcast(A, B') do ii, jj
             tid = Threads.threadid()

@@ -62,6 +62,15 @@ function calc_outsize(x...)
 end
 
 
+function get_new_batch!(nextifirstchannel, ntasks, batchsize)
+    ifirst = take!(nextifirstchannel)
+    ilast = min(ntasks, ifirst + batchsize - 1)
+    put!(nextifirstchannel, ilast + 1)
+    iset = ifirst:ilast
+    return iset
+end
+
+
 function mybroadcast!(out, fn, x...)
     ntasks = prod(calc_outsize(x...))
     @assert size(out) == calc_outsize(x...)
@@ -81,10 +90,7 @@ function mybroadcast!(out, fn, x...)
             batchsize = 1
 
             # worker threads feed themselves
-            ifirst = take!(nextifirstchannel)
-            ilast = min(ntasks, ifirst + batchsize - 1)
-            put!(nextifirstchannel, ilast + 1)
-            iset = ifirst:ilast
+            iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
 
             while length(iset) > 0
 
@@ -99,10 +105,7 @@ function mybroadcast!(out, fn, x...)
 
                 batchsize = calc_i_per_thread(time, length(iset))
 
-                ifirst = take!(nextifirstchannel)
-                ilast = min(ntasks, ifirst + batchsize - 1)
-                put!(nextifirstchannel, ilast + 1)
-                iset = ifirst:ilast
+                iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
             end
         catch e
             if e isa InvalidStateException

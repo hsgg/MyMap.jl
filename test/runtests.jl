@@ -410,8 +410,8 @@ do_perf = false
         num_batches = fill(0, Threads.nthreads())
         num_tasks_per_batch = fill(0.0, Threads.nthreads())
 
-        A = 1:1000
-        B = 11:150
+        A = 1:100
+        B = 11:1500
 
         mybroadcast(A, B') do ii, jj
             tid = Threads.threadid()

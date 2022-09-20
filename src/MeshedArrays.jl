@@ -9,7 +9,7 @@ module MeshedArrays
 
 export MeshedArray
 
-using StaticArrays
+#using StaticArrays
 
 
 struct MeshedArray{T,N,Tarr,Tsz} <: AbstractArray{T,N}

@@ -3,7 +3,7 @@
 
 This module defines the function `mybroadcast`. It behave similarly to a
 threaded broadcast, except that it tries to batch iterations such that each
-batch takes about 0.2 seconds to perform.
+batch takes about 0.5 seconds to perform.
 
 The idea is to automatically adjust the number of iterations per batch so that
 overhead per iteration is low and batch size is small so that the threads keep
@@ -12,7 +12,13 @@ getting scheduled.
 For example, imagine that the execution time per iteration increases. With a
 static scheduler, this would mean that the first threads finish long before the
 last thread. This avoids that by adjusting the number of iterations so that
-each batch should take approximately 0.2 seconds.
+each batch should take approximately 0.5 seconds.
+
+So why batch iterations? Imagine you need to allocate a buffer for each
+iteration, and this buffer can be shared for sequentially run iterations.
+Allocating a separate buffer would add a lot of overhead, so that traditional
+`map()` can take longer than the serial implementation. Batching avoids that
+pitfall.
 """
 module MyBroadcast
 
@@ -25,7 +31,7 @@ include("MeshedArrays.jl")
 using .MeshedArrays
 
 
-function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.2, batch_maxadjust=2.0)
+function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.5, batch_maxadjust=2.0)
     adjust = batch_avgtime / time  # if we have accurate measurement of time
     adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
     adjust = max(1/batch_maxadjust, adjust)  # limit downward adjustment
@@ -35,9 +41,8 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.2, batch_maxa
     else
         i_per_thread_new = ceil(Int, adjust * i_per_thread_old)
     end
-    i_per_thread_new = max(1, i_per_thread_new)  # must be at least 1
 
-    return i_per_thread_new
+    return max(1, i_per_thread_new)  # must be at least 1
 end
 
 
@@ -57,56 +62,78 @@ function calc_outsize(x...)
 end
 
 
+function get_new_batch!(nextifirstchannel, ntasks, batchsize)
+    ifirst = take!(nextifirstchannel)
+    ilast = min(ntasks, ifirst + batchsize - 1)
+    put!(nextifirstchannel, ilast + 1)
+    iset = ifirst:ilast
+    return iset
+end
+
+
 function mybroadcast!(out, fn, x...)
     ntasks = prod(calc_outsize(x...))
     @assert size(out) == calc_outsize(x...)
 
-    ifirst = 1
-    i_per_thread = Atomic{Int}(1)
-    last_ifirst = 0
-    lk = Threads.Condition()
+    num_threads = Threads.nthreads()
 
-    num_free_threads = Atomic{Int}(Threads.nthreads())
-    @assert num_free_threads[] > 0
+    errorchannel = Channel{Any}(num_threads)
+
+    nextifirstchannel = Channel{Int}(1)  # this channel is used to synchronize all the threads
+    put!(nextifirstchannel, 1)
 
     all_indices = eachindex(out, x...)
 
-    @sync while ifirst <= ntasks
-        while num_free_threads[] < 1
-            # Don't spawn the next batch until a thread is free. This has
-            # several implications. First, Ctrl-C actually works (seems like
-            # threadid=1 is the one catching the signal, and no tasks are
-            # waiting on the other threads so they actually finish instead of
-            # continuing in the background). Second, printing and ProgressMeter
-            # actually work. Why? Not sure. Maybe because printing uses locks
-            # and yields()? Maybe tasks need to be cleaned up?
-            yield()
-        end
-        num_free_threads[] -= 1
+    # worker threads process the data
+    @threads for _ in 1:num_threads
+        try
+            batchsize = 1
 
-        ilast = min(ntasks, ifirst + i_per_thread[] - 1)
-        iset = ifirst:ilast  # no need to interpolate local variables
+            # worker threads feed themselves
+            iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
 
-        @async Threads.@spawn begin
-            time = @elapsed begin
-                idxs = all_indices[iset]
-                xs = (x[i][idxs] for i=1:length(x))
-                outs = fn(xs...)
-                out[idxs] .= outs
-            end
+            while length(iset) > 0
 
-            i_per_thread_new = calc_i_per_thread(time, length(iset))
-            lock(lk) do
-                if last_ifirst < iset[1]
-                    i_per_thread[] = i_per_thread_new
-                    last_ifirst = iset[1]
+                time = @elapsed begin
+                    idxs = all_indices[iset]
+
+                    xs = (x[i][idxs] for i=1:length(x))
+                    outs = fn(xs...)
+
+                    out[idxs] .= outs
                 end
-            end
-            num_free_threads[] += 1
-        end
 
-        ifirst = ilast + 1
-        yield()  # let some threads finish so that i_per_thread[] gets updated asap
+                batchsize = calc_i_per_thread(time, length(iset))
+
+                iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
+            end
+        catch e
+            if e isa InvalidStateException
+                @info "Exiting thread $(Threads.threadid()) due to closed channel"
+            else
+                # we caused the exception
+                close(nextifirstchannel)  # notify other threads
+                bt = catch_backtrace()
+                @warn "Exception in thread $(Threads.threadid()):\n  $e"
+                put!(errorchannel, (Threads.threadid(), e, bt))
+            end
+        end
+    end
+
+
+    num_failed_tasks = 0
+    while isready(errorchannel)
+        num_failed_tasks += 1
+        tid, e, stack = take!(errorchannel)
+        println(stdout)
+        @error "Exception in thread $tid of $num_threads:\n  $e"
+        showerror(stdout, e, stack)
+        println(stdout)
+    end
+    if num_failed_tasks > 0
+        println(stdout)
+        @error "Exceptions in threads" num_failed_tasks num_threads
+        error("Exceptions in threads")
     end
 
     return out

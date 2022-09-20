@@ -15,6 +15,13 @@ ThreadsX = "ac1d9e8a-700a-412c-b207-f0111f4b6c0d"
 
 [compat]
 LazyGrids = "0.4"
+BenchmarkTools = "1"
+ThreadsX = "0.1"
+ProgressMeter = "1"
+Polyester = "0.6"
+ThreadPools = "2"
+Strided = "1"
+StaticArrays = "1"
 julia = "1"
 
 [extras]

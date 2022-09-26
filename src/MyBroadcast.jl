@@ -105,32 +105,30 @@ function mybroadcast!(out, fn, x...)
 
     # worker threads process the data
     @threads for _ in 1:num_threads
-        total_computetime = 0.0
-        total_time = 0.0
+        #total_computetime = 0.0
+        #total_time = 0.0
         mytime_a = time_ns()
+        batchsize = 1
         try
-            batchsize = 1
-
             # worker threads feed themselves
             iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
 
             while length(iset) > 0
 
-                computetime = @elapsed begin
-                    idxs = all_indices[iset]
+                idxs = all_indices[iset]
 
-                    xs = (x[i][idxs] for i=1:length(x))
-                    outs = fn(xs...)
+                xs = (x[i][idxs] for i=1:length(x))
 
-                    out[idxs] .= outs
-                end
+                computetime = @elapsed outs = fn(xs...)
+
+                out[idxs] .= outs
 
                 mytime_b = time_ns()
                 mytottime = (mytime_b - mytime_a) ./ 1e9
                 mytime_a = mytime_b
 
-                total_computetime += computetime
-                total_time += mytottime
+                #total_computetime += computetime
+                #total_time += mytottime
 
                 #batchsize = calc_i_per_thread(computetime, length(iset))
                 batchsize = calc_i_per_thread_time(computetime, mytottime, length(iset))
@@ -148,11 +146,11 @@ function mybroadcast!(out, fn, x...)
                 put!(errorchannel, (Threads.threadid(), e, bt))
             end
         end
-        mytime_b = time_ns()
-        mytottime = (mytime_b - mytime_a) ./ 1e9
-        total_time += mytottime
-        overhead = 1 - total_computetime / total_time
-        @info "Exiting thread $(Threads.threadid())" total_time total_computetime overhead
+        #mytime_b = time_ns()
+        #mytottime = (mytime_b - mytime_a) ./ 1e9
+        #total_time += mytottime
+        #overhead = 1 - total_computetime / total_time
+        #@info "Exiting thread $(Threads.threadid())" total_time total_computetime overhead batchsize
     end
 
 

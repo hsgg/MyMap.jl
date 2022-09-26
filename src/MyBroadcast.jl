@@ -46,6 +46,25 @@ function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.5, batch_maxa
 end
 
 
+function calc_i_per_thread_time(computetime, totaltime, i_per_thread_old; batch_maxtime=1.0, batch_maxadjust=2.0, overhead_target_fraction=0.1)
+
+    overhead = 1 - computetime / totaltime
+
+    adjust = overhead / overhead_target_fraction
+    adjust = min(adjust, batch_maxtime / totaltime)  # limit batch time
+    adjust = min(adjust, batch_maxadjust)  # limit upward adjustment
+    adjust = max(adjust, 1/batch_maxadjust)  # limit downward adjustment
+
+    if adjust < 1
+        i_per_thread_new = floor(Int, adjust * i_per_thread_old)
+    else
+        i_per_thread_new = ceil(Int, adjust * i_per_thread_old)
+    end
+
+    return max(1, i_per_thread_new)  # must be at least 1
+end
+
+
 function calc_outsize(x...)
     outsize = fill(1, maximum(ndims.(x)))
     outsize[1:ndims(x[1])] .= size(x[1])
@@ -86,6 +105,9 @@ function mybroadcast!(out, fn, x...)
 
     # worker threads process the data
     @threads for _ in 1:num_threads
+        total_computetime = 0.0
+        total_time = 0.0
+        mytime_a = time_ns()
         try
             batchsize = 1
 
@@ -94,7 +116,7 @@ function mybroadcast!(out, fn, x...)
 
             while length(iset) > 0
 
-                time = @elapsed begin
+                computetime = @elapsed begin
                     idxs = all_indices[iset]
 
                     xs = (x[i][idxs] for i=1:length(x))
@@ -103,7 +125,15 @@ function mybroadcast!(out, fn, x...)
                     out[idxs] .= outs
                 end
 
-                batchsize = calc_i_per_thread(time, length(iset))
+                mytime_b = time_ns()
+                mytottime = (mytime_b - mytime_a) ./ 1e9
+                mytime_a = mytime_b
+
+                total_computetime += computetime
+                total_time += mytottime
+
+                #batchsize = calc_i_per_thread(computetime, length(iset))
+                batchsize = calc_i_per_thread_time(computetime, mytottime, length(iset))
 
                 iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
             end
@@ -118,6 +148,11 @@ function mybroadcast!(out, fn, x...)
                 put!(errorchannel, (Threads.threadid(), e, bt))
             end
         end
+        mytime_b = time_ns()
+        mytottime = (mytime_b - mytime_a) ./ 1e9
+        total_time += mytottime
+        overhead = 1 - total_computetime / total_time
+        @info "Exiting thread $(Threads.threadid())" total_time total_computetime overhead
     end
 
 

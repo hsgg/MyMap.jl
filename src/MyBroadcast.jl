@@ -2,17 +2,23 @@
     MyBroadcast
 
 This module defines the function `mybroadcast`. It behave similarly to a
-threaded broadcast, except that it tries to batch iterations such that each
-batch takes about 0.5 seconds to perform.
+threaded broadcast, except that it tries to batch iterations such that
+the overhead resulting from parallelization is small, while also attempting to
+fully utilise all threads.
 
-The idea is to automatically adjust the number of iterations per batch so that
-overhead per iteration is low and batch size is small so that the threads keep
-getting scheduled.
+In particular, the goal is to achieve this when the cost of each iteration
+varies, or when a buffer is needed for each iteration. The case where the
+buffer gets allocated for each iteration must be avoided, as that would stress
+the garbage collector to much. Therefore, iterations are batched together.
 
 For example, imagine that the execution time per iteration increases. With a
 static scheduler, this would mean that the first threads finish long before the
-last thread. This avoids that by adjusting the number of iterations so that
-each batch should take approximately 0.5 seconds.
+last thread. `mybroadcast` avoids that by adjusting the number of iterations
+per batch so that the overhead is approximately 10%.
+
+Furthermore, `mybroadcast` while attempt to limit the size of each batch so
+that the execution time is ~0.5 seconds. That keeps it reacting to inputs (like
+Ctrl-C) and wastes at most ~0.5 seconds idle time for one thread at the end.
 
 So why batch iterations? Imagine you need to allocate a buffer for each
 iteration, and this buffer can be shared for sequentially run iterations.
@@ -31,22 +37,7 @@ include("MeshedArrays.jl")
 using .MeshedArrays
 
 
-function calc_i_per_thread(time, i_per_thread_old; batch_avgtime=0.5, batch_maxadjust=2.0)
-    adjust = batch_avgtime / time  # if we have accurate measurement of time
-    adjust = min(batch_maxadjust, adjust)  # limit upward adjustment
-    adjust = max(1/batch_maxadjust, adjust)  # limit downward adjustment
-
-    if adjust < 1
-        i_per_thread_new = floor(Int, adjust * i_per_thread_old)
-    else
-        i_per_thread_new = ceil(Int, adjust * i_per_thread_old)
-    end
-
-    return max(1, i_per_thread_new)  # must be at least 1
-end
-
-
-function calc_i_per_thread_time(computetime, totaltime, i_per_thread_old; batch_maxtime=1.0, batch_maxadjust=2.0, overhead_target_fraction=0.1)
+function calc_i_per_thread(computetime, totaltime, i_per_thread_old; batch_maxtime=1.0, batch_maxadjust=2.0, overhead_target_fraction=0.1)
 
     overhead = 1 - computetime / totaltime
 
@@ -105,12 +96,10 @@ function mybroadcast!(out, fn, x...)
 
     # worker threads process the data
     @threads for _ in 1:num_threads
-        #total_computetime = 0.0
-        #total_time = 0.0
         mytime_a = time_ns()
-        batchsize = 1
         try
-            # worker threads feed themselves
+            batchsize = 1
+
             iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
 
             while length(iset) > 0
@@ -127,11 +116,7 @@ function mybroadcast!(out, fn, x...)
                 mytottime = (mytime_b - mytime_a) ./ 1e9
                 mytime_a = mytime_b
 
-                #total_computetime += computetime
-                #total_time += mytottime
-
-                #batchsize = calc_i_per_thread(computetime, length(iset))
-                batchsize = calc_i_per_thread_time(computetime, mytottime, length(iset))
+                batchsize = calc_i_per_thread(computetime, mytottime, length(iset))
 
                 iset = get_new_batch!(nextifirstchannel, ntasks, batchsize)
             end
@@ -146,11 +131,6 @@ function mybroadcast!(out, fn, x...)
                 put!(errorchannel, (Threads.threadid(), e, bt))
             end
         end
-        #mytime_b = time_ns()
-        #mytottime = (mytime_b - mytime_a) ./ 1e9
-        #total_time += mytottime
-        #overhead = 1 - total_computetime / total_time
-        #@info "Exiting thread $(Threads.threadid())" total_time total_computetime overhead batchsize
     end
 
 

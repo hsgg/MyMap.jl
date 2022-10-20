@@ -12,6 +12,16 @@ This module defines the function `mybroadcast`. It behaves similarly to a
 threaded broadcast, except that it tries to batch iterations such that each
 batch takes about 0.2 seconds to perform.
 
+It tries to solve the following problems:
+
+1. Each iteration systematically takes a different amount of time.
+
+2. Each iteration needs a buffer allocated.
+
+3. Remain responsive, e.g., Ctrl-C should interrupt a long calculation.
+
+4. Give readable error messages.
+
 The idea is to automatically adjust the number of iterations per batch so that
 overhead per iteration is low and batch size is small so that the threads keep
 getting scheduled.

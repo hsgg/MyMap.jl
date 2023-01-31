@@ -73,11 +73,9 @@ function get_new_batch!(next_ifirst_channel, ntasks, batchsize)
 end
 
 
-function mybroadcast!(out, fn, x...)
+function mybroadcast!(out, fn, x...; num_threads=Threads.nthreads())
     ntasks = prod(calc_outsize(x...))
     @assert size(out) == calc_outsize(x...)
-
-    num_threads = Threads.nthreads()
 
     errorchannel = Channel{Any}(num_threads)
 
@@ -142,7 +140,7 @@ function mybroadcast!(out, fn, x...)
 end
 
 
-function mybroadcast(fn, x...)
+function mybroadcast(fn, x...; kwargs...)
     Treturn = eltype(Base.return_types(fn, (eltype.(x)...,))[1])
 
     outsize = calc_outsize(x...)
@@ -157,7 +155,7 @@ function mybroadcast(fn, x...)
 
     out = Array{Treturn}(undef, outsize...)
 
-    mybroadcast!(out, fn, xs...)
+    mybroadcast!(out, fn, xs...; kwargs...)
 
     return out
 end

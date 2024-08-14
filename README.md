@@ -10,7 +10,7 @@ clumsily add an interface to make it more like broadcast? Hm...🤔)
 
 This module defines the function `mybroadcast()`. It behaves similarly to a
 threaded broadcast, except that it tries to batch iterations such that each
-batch takes about 0.2 seconds to perform.
+batch takes about 0.5 seconds to perform.
 
 It tries to solve problems related to the following:
 
@@ -43,7 +43,7 @@ take longer than the serial implementation. Batching avoids that pitfall.
 Why 0.5 seconds? Because we are humans, and 0.5 seconds makes it close enough
 to instantaneous. Maybe it should be 0.2 seconds. Maybe it is 0.2 seconds. How
 should I know? I switched so many times, I forgot. Maybe the overhead should be
-measured and folded into the equation. Yes, maybe.
+measured and folded into the equation. Maybe.
 
 An essential part of debugging are error messages. If a thread encounters an
 exception, it catches that and signals all other threads. The main thread
@@ -83,28 +83,17 @@ different number of threads, you can pass the `num_threads` keyword argument.
 ## Anticipated FAQ
 
 1. Why didn't you use... instead?
-Probably because I didn't understand how to use it properly. That is, in a way
-that it wouldn'd be slower than the serial implementation.
+
+   Probably because I didn't understand how to use it properly. That is, use it
+   in a way that it wouldn'd be slower than the serial implementation. It's the
+   allocation of buffers that can make that hard.
 
 2. Why implement MeshedArrays when there is LazyGrids?
-Because I didn't know LazyGrids existed when I wrote MeshedArrays... and then
-it turned out MeshedArrays is faster.
+
+   Because I didn't know LazyGrids existed when I wrote MeshedArrays... and
+   then it turned out MeshedArrays is faster.
 
 
 ## Unanticipated FAQ
 
 None!
-
-
-## Todo
-
-- Pass ProgressMeter into mybroadcast(): Some tasks will have extra overhead
-  due to `next!()` actually updating the progress bar. We don't really want
-  that in the calculation for the time of the task (unless every task ends up
-  updating the bar).
-
-
-## MaybeDo
-
-- Change 2D interface so that `fn(a, b')` works. (Nah, maybe not. Very unclear
-  how to decide the next batch area.)
